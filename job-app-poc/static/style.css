@@ -1,0 +1,98 @@
+body {
+    font-family: sans-serif;
+    margin: 20px;
+    background-color: #f4f4f4;
+}
+
+h1 {
+    text-align: center;
+    color: #333;
+}
+
+.container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    max-width: 1200px;
+    margin: 20px auto;
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+section {
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 5px;
+    background-color: #fff;
+}
+
+h2 {
+    margin-top: 0;
+    color: #555;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+textarea {
+    width: 95%;
+    margin-bottom: 10px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+button {
+    padding: 10px 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 5px;
+    margin-bottom: 5px;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+pre {
+    background-color: #eee;
+    padding: 10px;
+    border-radius: 4px;
+    white-space: pre-wrap; /* Allows wrapping */
+    word-wrap: break-word; /* Breaks long words */
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+#jobs-list div {
+    border: 1px solid #eee;
+    padding: 10px;
+    margin-bottom: 5px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+#jobs-list div:hover {
+    background-color: #f0f0f0;
+}
+
+#job-details-display,
+#tailoring-suggestions {
+    margin-top: 10px;
+    background-color: #f9f9f9;
+    padding: 10px;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    min-height: 50px;
+}
+
+input[type="text"] {
+    padding: 8px;
+    margin-right: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}

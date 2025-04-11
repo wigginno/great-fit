@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+python-dotenv
+python-multipart # For form data/file uploads
+google-generativeai
+
+# Testing
+pytest
+httpx
+pytest-asyncio
+pytest-env
