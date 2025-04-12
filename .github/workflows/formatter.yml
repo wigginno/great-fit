@@ -39,7 +39,7 @@ jobs:
         run: black .
 
       - name: Run Prettier Formatter
-        run: npx prettier@3.5.3--write "**/*.js"
+        run: npx prettier@3.5.3 --write "**/*.js"
 
       - name: Commit formatting changes
         uses: stefanzweifel/git-auto-commit-action@v5
