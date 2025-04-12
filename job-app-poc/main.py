@@ -22,7 +22,7 @@ create_db_and_tables()
 app = FastAPI(
     title="Job Application Assistant PoC",
     description="Backend API for the Job Application Assistant PoC",
-    version="0.1.0"
+    version="0.1.0",
 )
 
 # --- CORS Middleware --- Set up CORS
@@ -40,18 +40,21 @@ app.add_middleware(
 # Mount static files directory
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+
 # --- Root Endpoint --- Serve index.html using FileResponse
 @app.get("/", response_class=FileResponse)
 async def read_root():
     index_path = "static/index.html"
     if not os.path.exists(index_path):
-         raise HTTPException(status_code=404, detail="index.html not found")
-    return FileResponse(index_path, media_type='text/html')
+        raise HTTPException(status_code=404, detail="index.html not found")
+    return FileResponse(index_path, media_type="text/html")
+
 
 # Add route for favicon.ico
-@app.get('/favicon.ico', include_in_schema=False)
+@app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 
 # --- User Endpoints ---
 @app.post("/users/", response_model=schemas.User, tags=["Users"])
@@ -61,6 +64,7 @@ def create_user_endpoint(user: schemas.UserCreate, db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="Email already registered")
     return crud.create_user(db=db, user=user)
 
+
 # --- Helper Functions for Resume Processing ---
 async def extract_text_from_resume(file: UploadFile) -> str:
     """Extract text from various resume formats (PDF, DOCX, TXT)"""
@@ -69,7 +73,7 @@ async def extract_text_from_resume(file: UploadFile) -> str:
     extracted_text = ""
 
     try:
-        if content_type == 'application/pdf':
+        if content_type == "application/pdf":
             # Extract text from PDF
             with io.BytesIO(file_content) as pdf_file:
                 pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -77,7 +81,10 @@ async def extract_text_from_resume(file: UploadFile) -> str:
                     page = pdf_reader.pages[page_num]
                     extracted_text += page.extract_text() + "\n"
 
-        elif content_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword']:
+        elif content_type in [
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+        ]:
             # Extract text from DOCX
             with tempfile.NamedTemporaryFile(delete=False) as temp_file:
                 temp_file.write(file_content)
@@ -91,45 +98,71 @@ async def extract_text_from_resume(file: UploadFile) -> str:
                 if os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
 
-        elif content_type == 'text/plain':
+        elif content_type == "text/plain":
             # Already a text file
-            extracted_text = file_content.decode('utf-8')
+            extracted_text = file_content.decode("utf-8")
 
         else:
-            raise HTTPException(status_code=400, detail=f"Unsupported file type: {content_type}")
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported file type: {content_type}"
+            )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error extracting text from resume: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error extracting text from resume: {str(e)}"
+        )
 
     return extracted_text
 
+
 # --- User Profile Endpoints (Assuming user_id=1 for PoC) ---
-@app.post("/users/{user_id}/profile/", response_model=schemas.UserProfile, tags=["User Profile"])
-def create_or_update_profile_endpoint(user_id: int, profile: schemas.UserProfileCreate, db: Session = Depends(get_db)):
+@app.post(
+    "/users/{user_id}/profile/",
+    response_model=schemas.UserProfile,
+    tags=["User Profile"],
+)
+def create_or_update_profile_endpoint(
+    user_id: int, profile: schemas.UserProfileCreate, db: Session = Depends(get_db)
+):
     if user_id != 1:
-         raise HTTPException(status_code=403, detail="Operation not permitted for this user")
+        raise HTTPException(
+            status_code=403, detail="Operation not permitted for this user"
+        )
 
     # Check if the user exists in the database
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         # User doesn't exist, create new user
-        user = crud.create_user(db=db, user=schemas.UserCreate(email="user@example.com"))
+        user = crud.create_user(
+            db=db, user=schemas.UserCreate(email="user@example.com")
+        )
 
-    user_profile = crud.create_or_update_user_profile(db=db, user_id=user_id, profile=profile)
-    return schemas.UserProfile(id=user_id, owner_email=user.email, profile_data=profile.profile_data)
+    user_profile = crud.create_or_update_user_profile(
+        db=db, user_id=user_id, profile=profile
+    )
+    return schemas.UserProfile(
+        id=user_id, owner_email=user.email, profile_data=profile.profile_data
+    )
+
 
 @app.post("/users/{user_id}/resume/upload", tags=["User Profile"])
-async def upload_resume_endpoint(user_id: int, resume: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_resume_endpoint(
+    user_id: int, resume: UploadFile = File(...), db: Session = Depends(get_db)
+):
     """Upload and parse a resume to create user profile"""
 
     if user_id != 1:
-        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
+        raise HTTPException(
+            status_code=403, detail="Operation not permitted for this user"
+        )
 
     # Extract text from the resume file
     resume_text = await extract_text_from_resume(resume)
 
     if not resume_text.strip():
-        raise HTTPException(status_code=400, detail="Could not extract text from the resume")
+        raise HTTPException(
+            status_code=400, detail="Could not extract text from the resume"
+        )
 
     # Parse the resume text using LLM
     profile_data = await logic.parse_resume_with_llm(resume_text)
@@ -138,33 +171,39 @@ async def upload_resume_endpoint(user_id: int, resume: UploadFile = File(...), d
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         # User doesn't exist, create new user
-        user = crud.create_user(db=db, user=schemas.UserCreate(email="user@example.com"))
+        user = crud.create_user(
+            db=db, user=schemas.UserCreate(email="user@example.com")
+        )
 
     # Create or update the user profile with the parsed data
     profile = schemas.UserProfileCreate(profile_data=profile_data)
-    user_profile = crud.create_or_update_user_profile(db=db, user_id=user_id, profile=profile)
+    user_profile = crud.create_or_update_user_profile(
+        db=db, user_id=user_id, profile=profile
+    )
 
     # Create the response object and return as JSON
     response_data = {
         "id": user_id,
         "owner_email": user.email,
-        "profile_data": profile_data
+        "profile_data": profile_data,
     }
 
     return JSONResponse(content=response_data)
 
+
 @app.get("/users/{user_id}/profile/", tags=["User Profile"])
 def get_profile_endpoint(user_id: int, db: Session = Depends(get_db)):
     if user_id != 1:
-         raise HTTPException(status_code=403, detail="Operation not permitted for this user")
+        raise HTTPException(
+            status_code=403, detail="Operation not permitted for this user"
+        )
 
     # Check if user exists first
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         # Return a custom response for no user
         return Response(
-            status_code=204,  # No Content 
-            headers={"X-Profile-Status": "no_user_found"}
+            status_code=204, headers={"X-Profile-Status": "no_user_found"}  # No Content
         )
 
     # Now check for profile
@@ -173,19 +212,24 @@ def get_profile_endpoint(user_id: int, db: Session = Depends(get_db)):
         # User exists but has no profile
         return Response(
             status_code=204,  # No Content
-            headers={"X-Profile-Status": "no_profile_found"}
+            headers={"X-Profile-Status": "no_profile_found"},
         )
 
     # Normal case - return the profile
     profile_data = json.loads(profile_json_str)
-    profile = schemas.UserProfile(id=user_id, owner_email=user.email, profile_data=profile_data)
+    profile = schemas.UserProfile(
+        id=user_id, owner_email=user.email, profile_data=profile_data
+    )
 
     # Convert to dictionary and return as JSON response
     return JSONResponse(content=profile.model_dump())
 
+
 # --- Job Endpoints (Assuming user_id=1 for PoC) ---
 @app.post("/users/{user_id}/jobs/", tags=["Jobs"])
-async def create_job_endpoint(user_id: int, job: schemas.JobCreate, db: Session = Depends(get_db)):
+async def create_job_endpoint(
+    user_id: int, job: schemas.JobCreate, db: Session = Depends(get_db)
+):
     # Verify user exists
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
@@ -198,27 +242,35 @@ async def create_job_endpoint(user_id: int, job: schemas.JobCreate, db: Session 
     enhanced_job = schemas.JobCreate(
         title=formatted_job_data.get("title", job.title) or job.title,
         company=formatted_job_data.get("company", job.company) or job.company,
-        description=json.dumps(formatted_job_data)  # Store the full formatted data as JSON
+        description=json.dumps(
+            formatted_job_data
+        ),  # Store the full formatted data as JSON
     )
 
     # Create the job with enhanced data
     created_job = crud.create_job(db=db, job=enhanced_job, user_id=user_id)
 
     # Return response as JSONResponse to avoid validation issues
-    return JSONResponse(content={
-        "id": created_job.id,
-        "title": created_job.title,
-        "company": created_job.company,
-        "description": created_job.description,
-        "user_id": created_job.user_id
-    })
+    return JSONResponse(
+        content={
+            "id": created_job.id,
+            "title": created_job.title,
+            "company": created_job.company,
+            "description": created_job.description,
+            "user_id": created_job.user_id,
+        }
+    )
+
 
 @app.get("/users/{user_id}/jobs/", response_model=List[schemas.Job], tags=["Jobs"])
 def get_jobs_endpoint(user_id: int, db: Session = Depends(get_db)):
     if user_id != 1:
-         raise HTTPException(status_code=403, detail="Operation not permitted for this user")
+        raise HTTPException(
+            status_code=403, detail="Operation not permitted for this user"
+        )
     jobs = crud.get_jobs_for_user(db=db, user_id=user_id)
     return jobs
+
 
 @app.get("/users/{user_id}/jobs/{job_id}", tags=["Jobs"])
 def get_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
@@ -227,19 +279,24 @@ def get_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
     """
     job = crud.get_job(db=db, job_id=job_id, user_id=user_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"Job with id {job_id} not found for user {user_id}")
+        raise HTTPException(
+            status_code=404, detail=f"Job with id {job_id} not found for user {user_id}"
+        )
 
     # Return as JSONResponse for consistency with other endpoints
-    return JSONResponse(content={
-        "id": job.id,
-        "title": job.title,
-        "company": job.company,
-        "description": job.description,
-        "user_id": job.user_id,
-        # Include any additional fields that might be in the response model
-        "ranking_score": getattr(job, 'ranking_score', None),
-        "ranking_explanation": getattr(job, 'ranking_explanation', None)
-    })
+    return JSONResponse(
+        content={
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "description": job.description,
+            "user_id": job.user_id,
+            # Include any additional fields that might be in the response model
+            "ranking_score": getattr(job, "ranking_score", None),
+            "ranking_explanation": getattr(job, "ranking_explanation", None),
+        }
+    )
+
 
 @app.delete("/users/{user_id}/jobs/{job_id}", tags=["Jobs"])
 def delete_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
@@ -248,22 +305,27 @@ def delete_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)
     """
     # For demo purposes, only allow user 1 to delete jobs
     if user_id != 1:
-        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
+        raise HTTPException(
+            status_code=403, detail="Operation not permitted for this user"
+        )
 
     # Attempt to delete the job
     success = crud.delete_job(db=db, job_id=job_id, user_id=user_id)
 
     if not success:
-        raise HTTPException(status_code=404, detail=f"Job with id {job_id} not found for user {user_id}")
+        raise HTTPException(
+            status_code=404, detail=f"Job with id {job_id} not found for user {user_id}"
+        )
 
     return {"message": "Job deleted successfully"}
+
 
 # --- New Job Parsing/Saving Endpoint ---
 @app.post("/jobs/parse-and-save/", response_model=schemas.Job, tags=["Jobs"])
 async def parse_and_create_job_endpoint(
-    job_input: schemas.JobDescriptionInput, # Expect raw description
-    user_id: int = 1, # Hardcoded user ID for PoC
-    db: Session = Depends(get_db)
+    job_input: schemas.JobDescriptionInput,  # Expect raw description
+    user_id: int = 1,  # Hardcoded user ID for PoC
+    db: Session = Depends(get_db),
 ):
     # Check if user exists (optional but good practice)
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -275,9 +337,9 @@ async def parse_and_create_job_endpoint(
 
     # Prepare data for database creation
     job_data_to_create = schemas.JobCreate(
-        title=extracted_info.title,             # Use extracted title
-        company=extracted_info.company,         # Use extracted company
-        description=job_input.description # Use original full text
+        title=extracted_info.title,  # Use extracted title
+        company=extracted_info.company,  # Use extracted company
+        description=job_input.description,  # Use original full text
     )
 
     # Create job in the database
@@ -287,28 +349,41 @@ async def parse_and_create_job_endpoint(
     except Exception as e:
         # Log the error appropriately
         # logger.error(f"Failed to create job after LLM extraction: {e}") # Ensure logger is configured if used
-        raise HTTPException(status_code=500, detail="Failed to save job after processing.")
+        raise HTTPException(
+            status_code=500, detail="Failed to save job after processing."
+        )
+
 
 # --- Pydantic Models ---
 class TailoringRequest(BaseModel):
     job_description: str
 
+
 class TailoringResponse(BaseModel):
     suggestions: str
+
 
 # --- Job Ranking and Tailoring Endpoints ---
 from pydantic import BaseModel
 from typing import Optional
 
+
 class JobRankResponse(BaseModel):
     score: Optional[float] = None
     explanation: Optional[str] = None
 
-@app.post("/users/{user_id}/jobs/{job_id}/rank", response_model=JobRankResponse, tags=["LLM Features"])
+
+@app.post(
+    "/users/{user_id}/jobs/{job_id}/rank",
+    response_model=JobRankResponse,
+    tags=["LLM Features"],
+)
 async def rank_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
     """Triggers LLM ranking for a specific job based on user 1's profile."""
     # user_id is now a parameter, no need to hardcode
-    score, explanation = await logic.rank_job_with_llm(db=db, job_id=job_id, user_id=user_id)
+    score, explanation = await logic.rank_job_with_llm(
+        db=db, job_id=job_id, user_id=user_id
+    )
     if score is None or explanation is None:
         raise HTTPException(status_code=500, detail="Failed to rank job using LLM")
 
@@ -316,30 +391,40 @@ async def rank_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get
 
     return {"score": score, "explanation": explanation}
 
+
 class ResumeTailoringRequest(BaseModel):
     job_description: str
     profile_snippet: str
 
+
 class ResumeTailoringResponse(BaseModel):
     suggestions: Optional[str] = None
 
-@app.post("/resume/suggest_tailoring", response_model=ResumeTailoringResponse, tags=["LLM Features"])
+
+@app.post(
+    "/resume/suggest_tailoring",
+    response_model=ResumeTailoringResponse,
+    tags=["LLM Features"],
+)
 async def suggest_tailoring_endpoint(request: ResumeTailoringRequest):
     """Generates resume tailoring suggestions based on job description and profile snippet."""
     suggestions = await logic.suggest_resume_tailoring(
-        job_description=request.job_description,
-        profile_snippet=request.profile_snippet
+        job_description=request.job_description, profile_snippet=request.profile_snippet
     )
     if suggestions is None:
-        raise HTTPException(status_code=500, detail="Failed to generate resume tailoring suggestions using LLM")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate resume tailoring suggestions using LLM",
+        )
     return {"suggestions": suggestions}
+
 
 # --- Autofill Mapping Endpoint ---
 @app.post("/autofill/map_poc", response_model=Dict[str, str], tags=["Autofill"])
 async def map_autofill_fields_poc(
     form_fields: List[schemas.FormFieldInfo],
-    user_id: int = 1,  
-    db: Session = Depends(get_db)
+    user_id: int = 1,
+    db: Session = Depends(get_db),
 ):
     """POC endpoint to map user profile data to given form fields using LLM.
 
@@ -347,41 +432,48 @@ async def map_autofill_fields_poc(
     """
     profile_json_str = crud.get_user_profile(db=db, user_id=user_id)
     if profile_json_str is None:
-        raise HTTPException(status_code=404, detail=f"Profile not found for user {user_id}")
+        raise HTTPException(
+            status_code=404, detail=f"Profile not found for user {user_id}"
+        )
 
     try:
         mapping = await logic.map_form_fields_with_llm(
-            db=db,
-            user_id=user_id,
-            form_fields=form_fields
+            db=db, user_id=user_id, form_fields=form_fields
         )
         return mapping
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to map autofill fields: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to map autofill fields: {e}"
+        )
+
 
 # --- New Endpoint ---
 @app.post("/users/{user_id}/jobs/tailor-suggestions", response_model=TailoringResponse)
 async def get_tailoring_suggestions_endpoint(
     request_data: TailoringRequest,
     user_id: int = Path(..., title="The ID of the user to get suggestions for"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Generates tailoring suggestions for a given job description based on the user's profile.
     """
     db_profile = crud.get_user_profile(db, user_id=user_id)
     if db_profile is None:
-        raise HTTPException(status_code=404, detail=f"User profile not found for user_id {user_id}")
+        raise HTTPException(
+            status_code=404, detail=f"User profile not found for user_id {user_id}"
+        )
 
     try:
         suggestions = await logic.get_tailoring_suggestions(
-            profile_text=db_profile,
-            job_description=request_data.job_description
+            profile_text=db_profile, job_description=request_data.job_description
         )
         return TailoringResponse(suggestions=suggestions)
     except Exception as e:
-        print(f"Error generating tailoring suggestions: {e}") 
-        raise HTTPException(status_code=500, detail="Failed to generate tailoring suggestions.")
+        print(f"Error generating tailoring suggestions: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to generate tailoring suggestions."
+        )
+
 
 # --- Dependency ---
 def get_db():
@@ -391,7 +483,9 @@ def get_db():
     finally:
         db.close()
 
+
 # --- Main execution --- (for running with uvicorn)
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

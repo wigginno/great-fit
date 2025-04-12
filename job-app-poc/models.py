@@ -3,14 +3,16 @@ from sqlalchemy.orm import relationship
 
 from database import Base
 
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     email = Column(String, unique=True, index=True)
-    profile_json = Column(String) # Store profile as JSON string for PoC
+    profile_json = Column(String)  # Store profile as JSON string for PoC
 
     jobs = relationship("Job", back_populates="owner")
+
 
 class Job(Base):
     __tablename__ = "jobs"

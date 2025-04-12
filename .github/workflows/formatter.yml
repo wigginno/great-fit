@@ -1,0 +1,51 @@
+name: Code Formatter
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format-code:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js (for npx)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '23.11'
+
+      - name: Install Black
+        run: pip install black
+
+      - name: Run Black Formatter
+        run: black .
+
+      - name: Run Prettier Formatter
+        run: npx prettier@3.5.3--write "**/*.js"
+
+      - name: Commit formatting changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "style: Auto-format code (black & prettier v3.5.3)"
+          branch: ${{ github.ref_name }}
+          commit_user_name: GitHub Actions Bot
+          commit_user_email: actions@github.com
+          file_pattern: '.'

@@ -16,26 +16,28 @@ TEST_PROFILE = {
             "firstName": "Test",
             "lastName": "User",
             "email": "test@example.com",
-            "phone": "555-1234"
+            "phone": "555-1234",
         },
         "summary": "A testing profile.",
         "skills": ["pytest", "fastapi", "mocking"],
-        "experience": [
-            {"company": "TestCorp", "title": "Tester", "years": 1}
-        ]
+        "experience": [{"company": "TestCorp", "title": "Tester", "years": 1}],
     }
 }
 TEST_JOB = {
     "title": "Test Engineer",
     "company": "TestCorp",
-    "description_text": "Need someone to write tests. FastAPI knowledge a plus."
+    "description_text": "Need someone to write tests. FastAPI knowledge a plus.",
 }
+
 
 def setup_test_data(db_session: Session) -> int:
     user = crud.create_user(db_session, schemas.UserCreate(**TEST_USER))
-    crud.create_or_update_user_profile(db_session, user.id, schemas.UserProfileCreate(**TEST_PROFILE))
+    crud.create_or_update_user_profile(
+        db_session, user.id, schemas.UserProfileCreate(**TEST_PROFILE)
+    )
     job = crud.create_job(db_session, schemas.JobCreate(**TEST_JOB), user.id)
     return job.id
+
 
 @pytest.fixture(scope="function")
 def setup_data_fixture(db_session: Session, request):
@@ -47,13 +49,18 @@ def setup_data_fixture(db_session: Session, request):
 
     profile_data = TEST_PROFILE.copy()
     profile_data["profile_data"] = dict(TEST_PROFILE["profile_data"])
-    profile_data["profile_data"]["contact"] = dict(TEST_PROFILE["profile_data"]["contact"])
+    profile_data["profile_data"]["contact"] = dict(
+        TEST_PROFILE["profile_data"]["contact"]
+    )
     profile_data["profile_data"]["contact"]["email"] = user_data["email"]
 
-    crud.create_or_update_user_profile(db_session, user.id, schemas.UserProfileCreate(**profile_data))
+    crud.create_or_update_user_profile(
+        db_session, user.id, schemas.UserProfileCreate(**profile_data)
+    )
     job = crud.create_job(db_session, schemas.JobCreate(**TEST_JOB), user.id)
     db_session.commit()
     return {"user_id": user.id, "job_id": job.id, "email": user_data["email"]}
+
 
 def test_create_user(test_client: TestClient):
     response = test_client.post("/users/", json=TEST_USER)
@@ -62,7 +69,8 @@ def test_create_user(test_client: TestClient):
     assert data["email"] == TEST_USER["email"]
     assert "id" in data
 
-def test_create_profile(test_client: TestClient): 
+
+def test_create_profile(test_client: TestClient):
     user_id = 1
     response = test_client.post(f"/users/{user_id}/profile/", json=TEST_PROFILE)
     assert response.status_code == 200
@@ -70,7 +78,8 @@ def test_create_profile(test_client: TestClient):
     assert data["id"] == user_id
     assert data["profile_data"] == TEST_PROFILE["profile_data"]
 
-def test_create_job(test_client: TestClient): 
+
+def test_create_job(test_client: TestClient):
     user_id = 1
     response = test_client.post(f"/users/{user_id}/jobs/", json=TEST_JOB)
     assert response.status_code == 200
@@ -81,12 +90,17 @@ def test_create_job(test_client: TestClient):
     assert data["user_id"] == user_id
     assert "id" in data
 
-def test_rank_job_success(test_client: TestClient, setup_data_fixture, db_session, monkeypatch):
+
+def test_rank_job_success(
+    test_client: TestClient, setup_data_fixture, db_session, monkeypatch
+):
     job_id = setup_data_fixture["job_id"]
     user_id = setup_data_fixture["user_id"]
     mock_response = "Score: 7.5\nExplanation: Decent match based on skills."
+
     async def mock_call_llm(*args, **kwargs):
         return mock_response
+
     monkeypatch.setattr(logic, "call_llm", mock_call_llm)
     response = test_client.post(f"/jobs/{job_id}/rank")
     assert response.status_code == 200
@@ -98,11 +112,16 @@ def test_rank_job_success(test_client: TestClient, setup_data_fixture, db_sessio
     assert db_job.ranking_score == 7.5
     assert db_job.ranking_explanation == "Decent match based on skills."
 
-def test_rank_job_llm_failure(test_client: TestClient, setup_data_fixture, db_session, monkeypatch):
+
+def test_rank_job_llm_failure(
+    test_client: TestClient, setup_data_fixture, db_session, monkeypatch
+):
     job_id = setup_data_fixture["job_id"]
     user_id = setup_data_fixture["user_id"]
+
     async def mock_call_llm(*args, **kwargs):
         return None
+
     monkeypatch.setattr(logic, "call_llm", mock_call_llm)
     response = test_client.post(f"/jobs/{job_id}/rank")
     assert response.status_code == 500
@@ -111,11 +130,16 @@ def test_rank_job_llm_failure(test_client: TestClient, setup_data_fixture, db_se
     assert db_job.ranking_score is None
     assert db_job.ranking_explanation is None
 
-def test_rank_job_parse_failure(test_client: TestClient, setup_data_fixture, db_session, monkeypatch):
+
+def test_rank_job_parse_failure(
+    test_client: TestClient, setup_data_fixture, db_session, monkeypatch
+):
     job_id = setup_data_fixture["job_id"]
     user_id = setup_data_fixture["user_id"]
+
     async def mock_call_llm(*args, **kwargs):
         return "Score: ?? Explanation: ??"
+
     monkeypatch.setattr(logic, "call_llm", mock_call_llm)
     response = test_client.post(f"/jobs/{job_id}/rank")
     assert response.status_code == 500
@@ -123,34 +147,42 @@ def test_rank_job_parse_failure(test_client: TestClient, setup_data_fixture, db_
     db_session.refresh(db_job)
     assert db_job.ranking_score is None
     assert db_job.ranking_explanation is None
+
 
 def test_suggest_tailoring_success(test_client: TestClient, monkeypatch):
     mock_suggestions = "Suggestion 1\nSuggestion 2"
+
     async def mock_call_llm(*args, **kwargs):
         return mock_suggestions
+
     monkeypatch.setattr(logic, "call_llm", mock_call_llm)
     request_data = {
         "job_description": "Job desc...",
-        "profile_snippet": "Profile snippet..."
+        "profile_snippet": "Profile snippet...",
     }
     response = test_client.post("/resume/suggest_tailoring", json=request_data)
     assert response.status_code == 200
     data = response.json()
     assert data["suggestions"] == mock_suggestions
 
+
 def test_suggest_tailoring_llm_failure(test_client: TestClient, monkeypatch):
     async def mock_call_llm(*args, **kwargs):
         return None
+
     monkeypatch.setattr(logic, "call_llm", mock_call_llm)
     request_data = {
         "job_description": "Job desc...",
-        "profile_snippet": "Profile snippet..."
+        "profile_snippet": "Profile snippet...",
     }
     response = test_client.post("/resume/suggest_tailoring", json=request_data)
     assert response.status_code == 500
     assert "Failed to generate resume tailoring suggestions" in response.text
 
-def test_autofill_map_success(test_client: TestClient, setup_data_fixture, db_session, monkeypatch):
+
+def test_autofill_map_success(
+    test_client: TestClient, setup_data_fixture, db_session, monkeypatch
+):
     user_id = setup_data_fixture["user_id"]
     form_fields_request = [
         {"field_id": "field_fname", "label": "First Name"},
@@ -158,7 +190,7 @@ def test_autofill_map_success(test_client: TestClient, setup_data_fixture, db_se
         {"field_id": "field_company", "label": "Company"},
         {"field_id": "field_skill_1", "label": "Skill 1"},
         {"field_id": "field_nonexistent", "label": "Something Else"},
-        {"field_id": "field_badkey", "label": "Bad Key Test"}
+        {"field_id": "field_badkey", "label": "Bad Key Test"},
     ]
     mock_key_mapping = {
         "field_fname": "contact.firstName",
@@ -166,13 +198,17 @@ def test_autofill_map_success(test_client: TestClient, setup_data_fixture, db_se
         "field_company": "experience.0.company",
         "field_skill_1": "skills.0",
         "field_nonexistent": "does.not.exist",
-        "field_badkey": 123
+        "field_badkey": 123,
     }
+
     async def mock_call_llm(*args, **kwargs):
-        assert kwargs.get('expect_json') is True
+        assert kwargs.get("expect_json") is True
         return mock_key_mapping
+
     monkeypatch.setattr(logic, "call_llm", mock_call_llm)
-    response = test_client.post(f"/autofill/map_poc?user_id={user_id}", json=form_fields_request)
+    response = test_client.post(
+        f"/autofill/map_poc?user_id={user_id}", json=form_fields_request
+    )
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, dict)
@@ -183,36 +219,59 @@ def test_autofill_map_success(test_client: TestClient, setup_data_fixture, db_se
     assert "field_nonexistent" not in data
     assert "field_badkey" not in data
 
-def test_autofill_map_llm_failure_json(test_client: TestClient, setup_data_fixture, db_session, monkeypatch):
+
+def test_autofill_map_llm_failure_json(
+    test_client: TestClient, setup_data_fixture, db_session, monkeypatch
+):
     user_id = setup_data_fixture["user_id"]
+
     async def mock_call_llm(*args, **kwargs):
-        assert kwargs.get('expect_json') is True
+        assert kwargs.get("expect_json") is True
         return None
+
     monkeypatch.setattr(logic, "call_llm", mock_call_llm)
     form_fields_request = [{"field_id": "f1", "label": "L1"}]
-    response = test_client.post(f"/autofill/map_poc?user_id={user_id}", json=form_fields_request)
+    response = test_client.post(
+        f"/autofill/map_poc?user_id={user_id}", json=form_fields_request
+    )
     assert response.status_code == 200
     assert response.json() == {}
 
-def test_autofill_map_llm_invalid_json(test_client: TestClient, setup_data_fixture, db_session, monkeypatch):
+
+def test_autofill_map_llm_invalid_json(
+    test_client: TestClient, setup_data_fixture, db_session, monkeypatch
+):
     user_id = setup_data_fixture["user_id"]
+
     async def mock_call_llm(*args, **kwargs):
-        assert kwargs.get('expect_json') is True
+        assert kwargs.get("expect_json") is True
         return "this is not json"
+
     monkeypatch.setattr(logic, "call_llm", mock_call_llm)
     form_fields_request = [{"field_id": "f1", "label": "L1"}]
-    response = test_client.post(f"/autofill/map_poc?user_id={user_id}", json=form_fields_request)
+    response = test_client.post(
+        f"/autofill/map_poc?user_id={user_id}", json=form_fields_request
+    )
     assert response.status_code == 200
     assert response.json() == {}
 
-def test_autofill_map_no_profile(test_client: TestClient, db_session: Session, monkeypatch):
-    user = crud.create_user(db_session, schemas.UserCreate(email="no_profile@example.com"))
+
+def test_autofill_map_no_profile(
+    test_client: TestClient, db_session: Session, monkeypatch
+):
+    user = crud.create_user(
+        db_session, schemas.UserCreate(email="no_profile@example.com")
+    )
     db_session.commit()
     user_id = user.id
+
     async def mock_call_llm(*args, **kwargs):
         pytest.fail("LLM should not be called if profile is missing")
+
     monkeypatch.setattr(logic, "call_llm", mock_call_llm)
     form_fields_request = [{"field_id": "f1", "label": "L1"}]
-    response = test_client.post(f"/autofill/map_poc?user_id={user_id}", json=form_fields_request)
+    response = test_client.post(
+        f"/autofill/map_poc?user_id={user_id}", json=form_fields_request
+    )
     assert response.status_code == 404
     assert "Profile not found for user" in response.json()["detail"]

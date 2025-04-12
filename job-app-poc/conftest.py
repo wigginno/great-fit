@@ -6,14 +6,18 @@ from fastapi.testclient import TestClient
 
 # Import app and DB dependency function first
 from main import app, get_db
+
 # Import database components needed for setup
 from database import Base
 
 TEST_DATABASE_URL = "sqlite:///./test_job_assistant_poc.db"
 
-connect_args = {"check_same_thread": False} if TEST_DATABASE_URL.startswith("sqlite") else {}
+connect_args = (
+    {"check_same_thread": False} if TEST_DATABASE_URL.startswith("sqlite") else {}
+)
 test_engine = create_engine(TEST_DATABASE_URL, connect_args=connect_args)
 TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_database():
@@ -53,6 +57,7 @@ def db_session():
     finally:
         session.close()
 
+
 # Override the get_db dependency for tests
 @pytest.fixture(scope="function")
 def override_get_db():
@@ -61,6 +66,7 @@ def override_get_db():
     This creates a new session for each API call, allowing proper
     transaction handling within FastAPI endpoints.
     """
+
     def _override_get_db():
         db = TestSessionLocal()
         try:
