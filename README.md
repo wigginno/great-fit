@@ -1,6 +1,6 @@
 # Job Application Assistant
 
-This project uses Language Models (LLMs) to help you improve your job applications. The current code (`job-app-poc/`) is a **Proof-of-Concept (PoC)** with the following features:
+This project uses Language Models (LLMs) to help you improve your job applications. The current code is a **Proof-of-Concept (PoC)** with the following features:
 
 *   Use your resume to automatically generate a profile.
 *   Paste a raw job description, and the LLM will try to format it nicely.
