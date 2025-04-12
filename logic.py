@@ -1,14 +1,10 @@
 import json
 import hashlib
 import functools
-import os
 import re
 import logging
 from sqlalchemy.orm import Session
 from typing import Any, Optional
-
-# For structured output models
-from pydantic import Field
 
 # Project imports
 from llm_interaction import (
