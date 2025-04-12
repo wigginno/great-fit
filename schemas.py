@@ -29,7 +29,9 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
-    profile: Union[UserProfile, None] = None  # Assuming profile is optional or loaded later
+    profile: Union[UserProfile, None] = (
+        None  # Assuming profile is optional or loaded later
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
