@@ -31,7 +31,7 @@ def create_or_update_user_profile(db: Session, user_id: int, profile: schemas.Us
     profile_json_string = json.dumps(profile.profile_data)
     user.profile_json = profile_json_string
     db.add(user) # add works for updates too
-    db.flush() # Ensure changes are sent before refresh
+    db.commit() # Explicitly commit the transaction to ensure it's saved to the database
     db.refresh(user)
     # Return the stored JSON string, endpoint will handle parsing for response model
     return user.profile_json
@@ -62,3 +62,15 @@ def update_job_ranking(db: Session, job_id: int, user_id: int, score: float, exp
     db.flush()
     db.refresh(db_job)
     return db_job
+
+def delete_job(db: Session, job_id: int, user_id: int):
+    """Delete a job for a specific user"""
+    # Find the job for this user
+    db_job = db.query(models.Job).filter(models.Job.id == job_id, models.Job.user_id == user_id).first()
+    if not db_job:
+        return False  # Job not found or doesn't belong to this user
+
+    # Delete the job
+    db.delete(db_job)
+    db.commit()
+    return True

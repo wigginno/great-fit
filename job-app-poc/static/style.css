@@ -1,98 +1,456 @@
+/* Base Styles */
 body {
-    font-family: sans-serif;
-    margin: 20px;
-    background-color: #f4f4f4;
-}
-
-h1 {
-    text-align: center;
+    font-family: system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f5f7fa;
     color: #333;
+    line-height: 1.6;
 }
 
-.container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    max-width: 1200px;
-    margin: 20px auto;
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
-}
-
-section {
-    border: 1px solid #ddd;
-    padding: 15px;
-    border-radius: 5px;
-    background-color: #fff;
-}
-
-h2 {
-    margin-top: 0;
-    color: #555;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 5px;
-}
-
-textarea {
-    width: 95%;
-    margin-bottom: 10px;
-    padding: 8px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-}
-
-button {
-    padding: 10px 15px;
-    background-color: #007bff;
+/* Header */
+.header {
+    background-color: #2c3e50;
     color: white;
+    padding: 1rem 0;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    margin-bottom: 30px;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 1.8rem;
+}
+
+/* Main Container */
+.container {
+    margin: 0 auto;
+    padding: 0 20px;
+    box-sizing: border-box;
+}
+
+/* Grid Layout */
+.main-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 25px;
+    margin-bottom: 40px;
+}
+
+/* Section Styles */
+.section {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    padding: 20px;
+    transition: box-shadow 0.3s ease;
+}
+
+.section:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.section h2 {
+    color: #2c3e50;
+    margin-top: 0;
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+    font-size: 1.25rem;
+}
+
+/* Form Elements */
+textarea {
+    width: 100%;
+    height: 150px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    font-family: inherit;
+    box-sizing: border-box;
+    resize: vertical;
+}
+
+.btn {
+    display: inline-block;
+    background-color: #3498db;
+    color: white;
+    padding: 8px 15px;
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    margin-right: 5px;
-    margin-bottom: 5px;
+    font-size: 14px;
+    transition: background-color 0.2s;
 }
 
-button:hover {
-    background-color: #0056b3;
+.btn:hover {
+    background-color: #2980b9;
 }
 
-pre {
-    background-color: #eee;
-    padding: 10px;
+/* Display Areas */
+.content-display {
+    background-color: #f9f9fb;
     border-radius: 4px;
-    white-space: pre-wrap; /* Allows wrapping */
-    word-wrap: break-word; /* Breaks long words */
-    max-height: 300px;
+    padding: 15px;
+    margin-top: 15px;
+    min-height: 100px;
+    border: 1px solid #eaeaea;
+}
+
+/* Placeholder Text */
+.placeholder {
+    color: #aaa;
+    font-style: italic;
+}
+
+/* Job List Styles */
+.job-list {
+    margin-top: 15px;
+    max-height: 400px;
     overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
 }
 
-#jobs-list div {
-    border: 1px solid #eee;
-    padding: 10px;
-    margin-bottom: 5px;
+.job-item {
+    padding: 12px 15px;
+    border-bottom: 1px solid #eee;
     cursor: pointer;
-    border-radius: 4px;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 
-#jobs-list div:hover {
+.job-item:last-child {
+    border-bottom: none;
+}
+
+.job-item:hover {
+    background-color: #f5f8fa;
+}
+
+.job-item.active {
+    background-color: #e1f5fe;
+    border-left: 3px solid #0288d1;
+}
+
+.job-details {
+    flex: 1;
+}
+
+.job-title {
+    font-weight: 600;
+    color: #37474f;
+    margin-bottom: 3px;
+}
+
+.job-company {
+    color: #666;
+    font-size: 0.85rem;
+    margin-bottom: 3px;
+}
+
+.job-score.unranked {
     background-color: #f0f0f0;
+    color: #999;
 }
 
-#job-details-display,
-#tailoring-suggestions {
-    margin-top: 10px;
-    background-color: #f9f9f9;
-    padding: 10px;
+/* Delete Button Styles */
+.delete-job-btn {
+    background-color: transparent;
+    border: none;
+    color: #dc3545;
+    font-size: 1rem;
+    padding: 5px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.delete-job-btn:hover {
+    opacity: 1;
+    background-color: rgba(220, 53, 69, 0.1);
+}
+
+.job-item.deleting {
+    opacity: 0.5;
+    pointer-events: none;
+    background-color: #f8f9fa;
+}
+
+/* Ranking score styling */
+.high-score .job-score {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.medium-score .job-score {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.low-score .job-score {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+/* Detailed Content */
+pre {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
     border: 1px solid #eee;
-    border-radius: 4px;
-    min-height: 50px;
+    overflow-x: auto;
+    font-size: 14px;
+    line-height: 1.5;
 }
 
-input[type="text"] {
-    padding: 8px;
-    margin-right: 5px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+/* Responsive Layout */
+@media (max-width: 768px) {
+    .main-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .header h1 {
+        font-size: 1.5rem;
+    }
+
+    .section {
+        padding: 15px;
+    }
+}
+
+/* Profile Formatting Styles */
+.profile-content {
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.profile-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.profile-id {
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.9rem;
+}
+
+.profile-email {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.profile-section {
+    padding: 15px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    margin-bottom: 10px;
+}
+
+.profile-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.section-title {
+    color: #2c3e50;
+    font-size: 1.1rem;
+    margin: 0 0 15px 0;
+    padding-bottom: 8px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.section-title::before {
+    content: '';
+    display: inline-block;
+    width: 4px;
+    height: 14px;
+    background-color: #3498db;
+    margin-right: 8px;
+    border-radius: 2px;
+}
+
+.section-content {
+    line-height: 1.6;
+    color: #333;
+    margin-bottom: 0.5em;
+}
+
+.skills-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.skill-item {
+    background-color: #e9f7fe;
+    color: #0366d6;
+    padding: 5px 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+}
+
+.experience-item,
+.education-item,
+.section-item {
+    margin-bottom: 16px;
+    padding-left: 10px;
+    border-left: 2px solid #e9ecef;
+}
+
+.section-item:last-child {
+    margin-bottom: 0;
+}
+
+.job-title,
+.degree,
+.item-title {
+    font-weight: 600;
+    color: #343a40;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.job-years,
+.institution,
+.item-company,
+.item-years {
+    color: #6c757d;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.detail-item,
+.item-detail {
+    display: flex;
+    padding: 6px 0;
+    margin-bottom: 5px;
+}
+
+.detail-label {
+    font-weight: 600;
+    width: 120px;
+    color: #495057;
+}
+
+.detail-value {
+    flex: 1;
+}
+
+.detail-list {
+    list-style-type: disc;
+    padding-left: 20px;
+    margin: 8px 0;
+}
+
+.profile-footer {
+    padding: 10px 15px;
+    background-color: #f8f9fa;
+    color: #6c757d;
+    font-size: 0.8rem;
+    text-align: right;
+    border-top: 1px solid #e9ecef;
+}
+
+/* Add more spacing for description content */
+.item-description {
+    margin-top: 5px;
+    margin-bottom: 10px;
+    line-height: 1.6;
+    white-space: pre-line;
+}
+
+/* Fix contact information spacing */
+.contact-info p {
+    margin: 5px 0;
+    line-height: 1.6;
+}
+
+/* Ensure proper wrapping of long text */
+.profile-section p,
+.section-text {
+    margin: 6px 0;
+    white-space: pre-line;
+    word-wrap: break-word;
+    line-height: 1.6;
+}
+
+/* Contact information formatting */
+.contact-section .contact-info,
+.contact-section .contact-info-formatted {
+    padding: 5px 0;
+}
+
+.contact-section p {
+    margin: 8px 0;
+    line-height: 1.5;
+}
+
+.contact-name {
+    font-weight: bold;
+    font-size: 1.1em;
+    margin-bottom: 10px !important;
+}
+
+/* Education section formatting */
+.education-entry {
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.education-entry:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.formatted-education p {
+    margin: 5px 0;
+    line-height: 1.5;
+}
+
+.edu-institution {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.edu-degree {
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+.edu-date,
+.edu-location {
+    color: #6c757d;
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+.edu-courses {
+    margin-top: 8px;
+    font-style: italic;
 }

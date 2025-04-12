@@ -1,116 +1,186 @@
-import google.generativeai as genai
 import os
-import dotenv
+import re
 import json
 import logging
-import asyncio
+from typing import Any
+
+from openai import OpenAI
+from pydantic import BaseModel
+from dotenv import load_dotenv
+import instructor
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
-dotenv.load_dotenv()
+load_dotenv()
 
-# --- Configure Gemini API ---
-API_KEY = os.getenv("GEMINI_API_KEY")
-if not API_KEY:
-    logger.error("GEMINI_API_KEY not found in environment variables.")
-    genai.configure(api_key="DUMMY_KEY_FOR_INITIALIZATION") 
-else:
-    try:
-        genai.configure(api_key=API_KEY)
-    except Exception as e:
-        logger.error(f"Failed to configure Gemini API: {e}")
+# --- Configure OpenRouter API ---
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    logger.error("OPENROUTER_API_KEY not found in environment variables.")
+    raise ValueError("OPENROUTER_API_KEY not found in environment variables. Ensure it's set in your .env file.")
 
-# --- Generation Configuration ---
-DEFAULT_GENERATION_CONFIG = genai.types.GenerationConfig(
-    temperature=0.5, 
-)
+# --- Application Info for OpenRouter ---
+APP_NAME = "Job Application Helper"
+APP_URL = "https://github.com/wigginno/job-app-helper"
 
-JSON_GENERATION_CONFIG = genai.types.GenerationConfig(
-    response_mime_type="application/json",
-    temperature=0.2 
-)
+# --- Initialize OpenAI client to use OpenRouter ---
+client = instructor.from_openai(OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY,
+    default_headers={
+        "HTTP-Referer": APP_URL,
+        "X-Title": APP_NAME,
+    }
+))
 
-# --- Safety Settings ---
-SAFETY_SETTINGS = {
-    genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-    genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
-    genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-    genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+EXTRA_BODY_PARAMS = {
+    "provider": {
+        "order": ["Groq"],
+    }
 }
 
-# --- Gemini Model Interaction ---
-MODEL_NAME = "gemini-1.5-pro-latest"
+# --- Model Configuration ---
+MODEL_NAME = "meta-llama/llama-4-maverick-17b-128e-instruct"
 
-async def call_gemini(prompt: str, expect_json: bool = False, retries: int = 3, delay: int = 5):
-    if not API_KEY or API_KEY == "DUMMY_KEY_FOR_INITIALIZATION":
-        logger.error("Gemini API key not configured. Cannot make API call.")
-        return None
+# --- Structured Output Examples ---
+PARSED_RESUME_OUTPUT_EXAMPLE = """{
+    \"Sections\": [
+        {
+            \"title\": \"Education\",
+            \"subsections\": [
+                {
+                    \"title\": \"University of Florida\",
+                    \"entries\": [
+                        \"Bachelor of Science in Computer Science\"
+                    ]
+                }
+            ],
+            \"entries\": []
+        },
+        {
+            \"title\": \"Experience\",
+            \"subsections\": [
+                {
+                    \"title\": \"Bob's Company - Data Engineer\",
+                    \"entries\": [
+                        \"Architected a data pipeline for real-time analytics improving team productivity by 20%\",
+                        \"Led a team of 5 engineers in the development of a new data platform\",
+                        \"Developed a custom reporting tool for sales analytics\"
+                    ]
+                }
+            ],
+            \"entries\": []
+        },
+        {
+            \"title\": \"Certifications\",
+            \"subsections\": [],
+            \"entries\": [
+                \"Cisco Certified Network Associate (CCNA)\",
+                \"Oracle Certified Professional, Java SE 11 Developer\"
+            ]
+        }
+    ],
+    \"skills\": [
+        \"FastAPI\",
+        \"Django\",
+        \"Python\",
+        \"SQL\",
+        \"Git\"
+    ]
+}"""
+PARSED_RESUME_OUTPUT_EXAMPLE = re.sub(r"\n +", "", PARSED_RESUME_OUTPUT_EXAMPLE).replace("\n", "")
 
-    generation_config = JSON_GENERATION_CONFIG if expect_json else DEFAULT_GENERATION_CONFIG
+# Pydantic models
+class Subsection(BaseModel):
+    title: str
+    entries: list[str]
 
-    model = genai.GenerativeModel(
-        MODEL_NAME,
-        generation_config=generation_config,
-        safety_settings=SAFETY_SETTINGS
+class Section(BaseModel):
+    title: str
+    subsections: list[Subsection]
+    entries: list[str]
+
+class ResumeData(BaseModel):
+    sections: list[Section]
+    skills: list[str]
+
+class JobRanking(BaseModel):
+    score: float
+    explanation: str
+
+class TailoringSuggestions(BaseModel):
+    suggestions: list[str]
+
+async def call_llm_for_resume_parsing(resume_text: str) -> ResumeData:
+    """Call LLM for structured resume parsing."""
+
+    system_prompt = f"""You are a resume parser. Your task is to extract structured information from the provided resume text.
+Example output: {PARSED_RESUME_OUTPUT_EXAMPLE}
+Major sections may vary based on the resume, as will the subsections, bullets, and nested structure.
+You'll notice there is some flexibility in the format to accommodate this kind of variation.
+If the resume has a dedicated section for skills, use that section's content for the skills array (and don't include the section in the \"Sections\" array).
+If the resume DOES NOT have a dedicated section for skills, infer the skills from the content of the resume."""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": resume_text},
+    ]
+
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=messages,
+        response_model=ResumeData,
+        max_tokens=2000,
+        extra_body=EXTRA_BODY_PARAMS,
     )
+    for section in response.sections:
+        print(f"{section.title=}")
+        for subsection in section.subsections:
+            print(f"  {subsection.title=}")
+            for entry in subsection.entries:
+                print(f"    {entry=}")
+        for entry in section.entries:
+            print(f"  {entry=}")
+    return response
 
-    for attempt in range(retries):
-        try:
-            logger.info(f"Calling Gemini API (Attempt {attempt + 1}/{retries}). Expect JSON: {expect_json}")
-            response = await model.generate_content_async(prompt)
+async def call_llm_for_job_ranking(job_description: str, applicant_profile: str) -> JobRanking:
+    """Call LLM for job ranking."""
 
-            if not response.parts:
-                 logger.warning("Gemini response has no parts.")
-                 if response.prompt_feedback:
-                     logger.warning(f"Prompt Feedback: {response.prompt_feedback}")
-                 return None 
+    system_prompt = """You are a job ranking assistant. Your task is to analyze the provided job description and applicant profile to determine the relevance of the applicant's profile to the job."""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Job Description: {job_description}\nApplicant Profile: {applicant_profile}"},
+    ]
 
-            response_text = response.text
-            logger.info("Gemini API call successful.")
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=messages,
+        response_model=JobRanking,
+        max_tokens=2000,
+        extra_body=EXTRA_BODY_PARAMS,
+    )
+    return response
 
-            if expect_json:
-                try:
-                    return json.loads(response_text)
-                except json.JSONDecodeError as json_e:
-                    logger.error(f"Failed to decode Gemini response as JSON: {json_e}")
-                    logger.debug(f"Raw response: {response_text}")
-                    if attempt == retries - 1:
-                        return None
-            else:
-                return response_text 
+async def call_llm_for_resume_tailoring(job_description: str, applicant_profile: str) -> TailoringSuggestions:
+    """Call LLM for resume tailoring."""
 
-        except Exception as e:
-            logger.error(f"Error calling Gemini API (Attempt {attempt + 1}/{retries}): {e}")
-            if attempt == retries - 1:
-                logger.error("Max retries reached. Returning None.")
-                return None
-            logger.info(f"Retrying in {delay} seconds...")
-            await asyncio.sleep(delay)
+    system_prompt = """You are a resume tailoring assistant. Your task is to generate tailored content for a job application based on the provided job description and applicant profile.
+Consider the applicant's qualifications and experiences in relation to the job description/requirements.
+Provide a list of 3-5 specific, actionable suggestions on how to tailor the profile snippet to better match the job description.
+Focus on incorporating keywords, highlighting relevant skills/experience, and using quantifiable achievements where possible.
+"""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Job Description: {job_description}\nApplicant Profile: {applicant_profile}"},
+    ]
 
-    return None 
-
-# Example usage (can be run standalone for testing if needed)
-async def main_test():
-    test_prompt = "Write a short story about a robot learning to paint."
-    print(f"Testing with prompt: {test_prompt}")
-    response = await call_gemini(test_prompt)
-    if response:
-        print("\n--- Response Text ---")
-        print(response)
-    else:
-        print("\nFailed to get response.")
-
-    test_json_prompt = "Create a JSON object with two keys: 'name' (string) and 'age' (integer). Use 'Bob' and 30."
-    print(f"\nTesting with JSON prompt: {test_json_prompt}")
-    json_response = await call_gemini(test_json_prompt, expect_json=True)
-    if json_response:
-        print("\n--- Response JSON ---")
-        print(json.dumps(json_response, indent=2))
-    else:
-        print("\nFailed to get JSON response.")
-
-if __name__ == "__main__":
-    asyncio.run(main_test())
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=messages,
+        response_model=TailoringSuggestions,
+        max_tokens=2000,
+        extra_body=EXTRA_BODY_PARAMS,
+    )
+    return response

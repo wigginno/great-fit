@@ -4,7 +4,15 @@ sqlalchemy
 pydantic
 python-dotenv
 python-multipart # For form data/file uploads
-google-generativeai
+
+# LLM Integration
+openai>=1.5.0  # For OpenRouter API
+instructor>=0.5.0  # For structured outputs
+
+# Document parsing
+PyPDF2
+python-docx
+aiofiles
 
 # Testing
 pytest

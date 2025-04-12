@@ -1,18 +1,56 @@
-import logging
-import re
 import json
+import hashlib
+import functools
+import logging
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any, Optional
+from typing import Any, Optional
+
+# For structured output models
+from pydantic import Field
 
 # Project imports
-from llm_interaction import call_gemini
+from llm_interaction import call_llm_for_resume_parsing, call_llm_for_job_ranking, call_llm_for_resume_tailoring
 import crud
-import models
 import schemas
 
+# Set up logging
 logger = logging.getLogger(__name__)
 
-def get_value_from_nested_dict(data_dict: Dict[str, Any], key_string: str) -> Optional[Any]:
+# Simple LLM response cache to reduce API calls
+_LLM_CACHE = {}
+
+def cache_llm_response(func):
+    """Decorator to cache LLM responses based on function parameters"""
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        # Create a unique key based on function name and all arguments
+        # Convert all args to strings for hashing
+        args_str = [str(arg) for arg in args]
+        kwargs_str = [f"{k}={v}" for k, v in sorted(kwargs.items())]
+        all_args = func.__name__ + "|" + "|".join(args_str + kwargs_str)
+        cache_key = hashlib.md5(all_args.encode()).hexdigest()
+
+        # Check if we have a cached response
+        if cache_key in _LLM_CACHE:
+            logger.info(f"Using cached LLM response for {func.__name__}, hash {cache_key[:8]}")
+            return _LLM_CACHE[cache_key]
+
+        # Call the LLM function
+        result = await func(*args, **kwargs)
+
+        # Cache the result
+        if result is not None:
+            _LLM_CACHE[cache_key] = result
+
+        return result
+    return wrapper
+
+# Apply caching to all LLM functions
+call_llm_for_resume_parsing_cached = cache_llm_response(call_llm_for_resume_parsing)
+call_llm_for_job_ranking_cached = cache_llm_response(call_llm_for_job_ranking)
+call_llm_for_resume_tailoring_cached = cache_llm_response(call_llm_for_resume_tailoring)
+
+def get_value_from_nested_dict(data_dict: dict[str, Any], key_string: str) -> Optional[Any]:
     keys = key_string.split('.')
     value = data_dict
     try:
@@ -66,45 +104,18 @@ async def rank_job_with_llm(db: Session, job_id: int, user_id: int):
 
     job_description_text = db_job.description_text
 
-    prompt = f"""Analyze the following job description and user profile snippet.
-Provide a relevance score from 1 (low) to 10 (high) and a brief one-sentence explanation.
-
-Job Description:
-```
-{job_description_text}
-```
-
-User Profile Snippet:
-```json
-{profile_snippet}
-```
-
-Respond ONLY in the format:
-Score: [score]
-Explanation: [explanation]"""
-
-    llm_response = await call_gemini(prompt)
-
-    if not llm_response:
-        logger.error(f"LLM call failed for job {job_id}, user {user_id}")
-        return None, None
-
     try:
-        score_match = re.search(r"Score:\s*([\d\.]+)", llm_response)
-        explanation_match = re.search(r"Explanation:\s*(.*)", llm_response, re.IGNORECASE)
+        # Use the new structured job ranking function
+        result = await call_llm_for_job_ranking_cached(job_description_text, profile_snippet)
 
-        if not score_match or not explanation_match:
-            logger.error(f"Could not parse LLM response for job {job_id}. Response: {llm_response}")
-            return None, None
+        # Extract score and explanation from the structured result
+        score = result.score
+        explanation = result.explanation
 
-        score_str = score_match.group(1)
-        explanation = explanation_match.group(1).strip()
-        score = float(score_str)
-
-        score = max(1.0, min(10.0, score))
-
-    except (ValueError, AttributeError) as e:
-        logger.error(f"Error parsing score/explanation from LLM response for job {job_id}: {e}. Response: {llm_response}")
+        # Ensure score is within bounds
+        score = max(1.0, min(10.0, score))        
+    except Exception as e:
+        logger.error(f"Error calling LLM for job ranking for job {job_id}, user {user_id}: {e}")
         return None, None
 
     updated_job = crud.update_job_ranking(db, job_id=job_id, user_id=user_id, score=score, explanation=explanation)
@@ -117,31 +128,22 @@ Explanation: [explanation]"""
 
 async def suggest_resume_tailoring(job_description: str, profile_snippet: str):
     logger.info("Generating resume tailoring suggestions.")
-    prompt = f"""Given the following job description and a snippet from a user's profile/resume, provide 3-5 specific, actionable suggestions (as bullet points) on how to tailor the profile snippet to better match the job description.
-Focus on incorporating keywords, highlighting relevant skills/experience, and using quantifiable achievements where possible.
 
-Job Description:
-```
-{job_description}
-```
+    try:
+        # Use the new structured tailoring suggestions function
+        suggestions = await call_llm_for_resume_tailoring_cached(job_description, profile_snippet)
 
-Profile Snippet:
-```
-{profile_snippet}
-```
+        # Format suggestions as a string
+        formatted_suggestions = "\n".join([f"- {suggestion}" for suggestion in suggestions.suggestions])
 
-Suggestions:"""
-
-    llm_response = await call_gemini(prompt)
-
-    if not llm_response:
-        logger.error("LLM call failed for resume tailoring suggestions.")
+        logger.info("Successfully generated resume tailoring suggestions.")
+        return formatted_suggestions.strip()
+    except Exception as e:
+        logger.error(f"LLM call failed for resume tailoring suggestions: {e}")
         return None
 
-    logger.info("Successfully generated resume tailoring suggestions.")
-    return llm_response.strip() 
-
-async def map_form_fields_with_llm(db: Session, user_id: int, form_fields: List[schemas.FormFieldInfo]) -> Dict[str, str]:
+async def map_form_fields_with_llm(db: Session, user_id: int, form_fields: list[schemas.FormFieldInfo]) -> dict[str, str]:
+    """This is a placeholder/toy function until I get around to doing it properly."""
     logger.info(f"Mapping form fields for user {user_id}")
 
     profile_json_string = crud.get_user_profile(db, user_id=user_id)
@@ -183,7 +185,7 @@ Example Response Format:
 {{'field_id_for_firstname': 'contact.firstName', 'field_id_for_email': 'contact.email', 'field_id_for_company': 'experience.0.company'}}
 """
 
-    llm_key_mapping = await call_gemini(prompt, expect_json=True)
+    llm_key_mapping = await call_llm_cached(prompt, expect_json=True)
 
     if not llm_key_mapping or not isinstance(llm_key_mapping, dict):
         logger.error(f"LLM did not return a valid JSON dictionary for field mapping. Response: {llm_key_mapping}")
@@ -191,7 +193,7 @@ Example Response Format:
 
     logger.info(f"LLM returned key mapping: {llm_key_mapping}")
 
-    final_mapping: Dict[str, str] = {}
+    final_mapping: dict[str, str] = {}
     for field_id, profile_key in llm_key_mapping.items():
         if not isinstance(profile_key, str):
             logger.warning(f"LLM returned non-string key '{profile_key}' for field '{field_id}'. Skipping.")
@@ -209,82 +211,140 @@ Example Response Format:
     return final_mapping
 
 async def get_tailoring_suggestions(profile_text: str, job_description: str) -> str:
-    print("Generating tailoring suggestions via Gemini...") 
-
-    prompt = f"""
-    Given the following user profile/resume and job description, provide specific, actionable suggestions
-    on how the user can tailor their profile/resume to better match the requirements and keywords
-    in the job description. Focus on highlighting relevant skills, experiences, and keywords.
-    Format the suggestions as a clear, concise list or paragraph.
-
-    User Profile/Resume:
-    ---
-    {profile_text}
-    ---
-
-    Job Description:
-    ---
-    {job_description}
-    ---
-
-    Tailoring Suggestions:
-    """
+    logger.info("Generating tailoring suggestions...") 
 
     try:
-        suggestions = await call_gemini(prompt) 
+        # Call the new structured tailoring suggestions function
+        suggestions = await call_llm_for_resume_tailoring_cached(job_description, profile_text)
 
-        print("Successfully generated suggestions via Gemini.") 
-        return suggestions
+        # Format suggestions as a string if they're returned as a list
+        if isinstance(suggestions, list):
+            formatted_suggestions = "\n".join([f"- {suggestion}" for suggestion in suggestions])
+        else:
+            formatted_suggestions = suggestions
+
+        logger.info("Successfully generated tailoring suggestions.") 
+        return formatted_suggestions
 
     except Exception as e:
-        print(f"Error calling Gemini for tailoring suggestions: {e}")
-        raise Exception(f"LLM (Gemini) API call failed: {e}")
+        logger.error(f"Error calling LLM for tailoring suggestions: {e}")
+        raise Exception(f"LLM API call failed: {e}")
 
-def _summarize_profile(profile_data: Dict[str, Any]) -> str:
+def _summarize_profile(profile_data: dict[str, Any]) -> str:
     return json.dumps(profile_data)
 
-async def extract_job_info_with_llm(description_text: str) -> schemas.ExtractedJobInfo:
+# Resume parsing function using a single LLM call for structured output
+async def parse_resume_with_llm(resume_text: str) -> dict[str, Any]:
     """
-    Uses an LLM to extract the job title and company from raw description text.
+    Uses LLM to parse a resume text and extract all structured information in a single call.
+    Takes advantage of structured JSON output for consistency and reliability.
 
     Args:
-        description_text: The raw job description text.
+        resume_text: The raw text extracted from the uploaded resume.
 
     Returns:
-        A Pydantic model containing the extracted title and company,
-        or default values if extraction fails.
+        A dictionary containing structured profile data extracted from the resume.
     """
-    prompt = f"""
-Analyze the following job description text and extract the job title and the company name.
-Return the result strictly as a JSON object with the keys "title" and "company".
-- The "title" should be the most appropriate job title found.
-- The "company" should be the name of the hiring company.
-If you cannot definitively identify a title or company, use "Unknown Title" or "Unknown Company" respectively.
-
-Job Description Text:
----
-{description_text[:2000]} # Limit input length for safety/cost
----
-
-JSON Output:
-"""
-    default_info = schemas.ExtractedJobInfo(title="Unknown Title", company="Unknown Company")
-
     try:
-        logger.info("Attempting to extract job info with LLM...")
-        # call_gemini with expect_json=True should return a dict directly
-        llm_response_dict = await call_gemini(prompt, expect_json=True)
+        # Use the new structured resume parsing function
+        parsed_data = await call_llm_for_resume_parsing_cached(resume_text)
 
-        if not llm_response_dict or not isinstance(llm_response_dict, dict):
-            logger.warning(f"LLM returned unexpected response for job info extraction: {llm_response_dict}")
-            return default_info
+        # Map the new structure to the expected structure
+        resume_data = {}
 
-        # Use the dictionary directly (no json.loads needed)
-        # Pydantic will raise validation error if keys are missing or types are wrong
-        extracted_info = schemas.ExtractedJobInfo(**llm_response_dict)
-        logger.info(f"Successfully extracted job info: {extracted_info}")
-        return extracted_info
+        # Extract skills
+        resume_data["skills"] = parsed_data.skills
 
-    except Exception as e: # Catch Pydantic validation errors or other unexpected issues
-        logger.error(f"Error processing LLM response for job info extraction: {e}")
-        return default_info
+        # Process sections to extract education, experience, and other information
+        education = []
+        experience = []
+        projects = []
+        summary = ""
+
+        # Process all sections from the parsed data
+        logger.info(f"Processing {len(parsed_data.sections)} sections from parsed resume")
+        sections = parsed_data.sections
+        for section in sections:
+            section_title = section.title.lower()
+            logger.info(f"Processing section: '{section.title}'")
+
+            # Extract education information
+            if "education" in section_title:
+                logger.info(f"Found education section with {len(section.subsections)} subsections")
+                # Log detailed structure of education section
+                for i, subsection in enumerate(section.subsections):
+                    logger.info(f"Education subsection {i+1}: title='{subsection.title}', entries={len(subsection.entries)}")
+                    for j, entry in enumerate(subsection.entries):
+                        logger.info(f"  - Entry {j+1}: '{entry}'")
+                    edu_item = {
+                        "institution": subsection.title,
+                        "details": subsection.entries
+                    }
+                    education.append(edu_item)
+                # If no subsections, try to extract from entries directly
+                if len(section.subsections) == 0 and len(section.entries) > 0:
+                    logger.info(f"Education section has no subsections but {len(section.entries)} direct entries")
+                    for entry in section.entries:
+                        logger.info(f"Direct education entry: '{entry}'")
+                        # Try to extract institution from entry
+                        parts = entry.split(' - ', 1)
+                        if len(parts) > 1:
+                            institution = parts[0].strip()
+                            details = [parts[1].strip()]
+                        else:
+                            institution = "Unknown Institution"
+                            details = [entry]
+                        edu_item = {
+                            "institution": institution,
+                            "details": details
+                        }
+                        education.append(edu_item)
+
+            # Extract experience information
+            elif "experience" in section_title or "employment" in section_title:
+                for subsection in section.subsections:
+                    title_parts = subsection.title.split("-", 1)
+                    company = title_parts[0].strip() if len(title_parts) > 0 else ""
+                    position = title_parts[1].strip() if len(title_parts) > 1 else ""
+
+                    exp_item = {
+                        "company": company,
+                        "position": position,
+                        "description": subsection.entries
+                    }
+                    experience.append(exp_item)
+
+            # Extract projects information
+            elif "project" in section_title:
+                for subsection in section.subsections:
+                    project_item = {
+                        "name": subsection.title,
+                        "description": subsection.entries
+                    }
+                    projects.append(project_item)
+
+            # Extract summary information
+            elif "summary" in section_title or "objective" in section_title:
+                summary = "\n".join(section.entries)
+
+        # Add processed sections to resume_data
+        resume_data["education"] = education
+        resume_data["experience"] = experience
+
+        # Add optional sections if available
+        if projects:
+            resume_data["projects"] = projects
+        if summary:
+            resume_data["summary"] = summary
+
+        logger.info("Resume successfully parsed in a single LLM call")
+        return resume_data
+
+    except Exception as e:
+        logger.error(f"Error parsing resume with LLM: {e}")
+        # Create a fallback structure with minimal data
+        return {
+            "skills": [],
+            "education": [],
+            "experience": []
+        }

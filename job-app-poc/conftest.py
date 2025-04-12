@@ -25,12 +25,12 @@ def setup_test_database():
             print(f"\nRemoved existing test database file: {db_path}")
         except OSError as e:
             print(f"Error removing existing test database file {db_path}: {e}")
-    
+
     print(f"Creating test database tables at {db_path}")
     Base.metadata.create_all(bind=test_engine)
-    
+
     yield  # Tests run here
-    
+
     test_engine.dispose()
     if os.path.exists(db_path):
         try:
@@ -43,7 +43,7 @@ def setup_test_database():
 @pytest.fixture(scope="function")
 def db_session():
     """Provides a database session for each test function.
-    
+
     This session will automatically commit when db.commit() is called, which
     ensures data created in one test is visible to subsequent API calls.
     """
@@ -57,7 +57,7 @@ def db_session():
 @pytest.fixture(scope="function")
 def override_get_db():
     """Override the get_db dependency to use our test database.
-    
+
     This creates a new session for each API call, allowing proper
     transaction handling within FastAPI endpoints.
     """
@@ -67,12 +67,12 @@ def override_get_db():
             yield db
         finally:
             db.close()
-    
+
     original = app.dependency_overrides.get(get_db)
     app.dependency_overrides[get_db] = _override_get_db
-    
+
     yield
-    
+
     if original:
         app.dependency_overrides[get_db] = original
     else:
