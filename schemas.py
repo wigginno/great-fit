@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, Union
 
+
 class UserProfileBase(BaseModel):
     profile_data: dict  # Simple dict for PoC profile
 
