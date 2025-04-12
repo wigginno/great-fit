@@ -1,6 +1,5 @@
-from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, Union
 
 
 # --- User Profile Schemas ---
@@ -30,7 +29,7 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
-    profile: UserProfile | None = None  # Assuming profile is optional or loaded later
+    profile: Union[UserProfile, None] = None  # Assuming profile is optional or loaded later
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -67,7 +66,7 @@ class JobCreate(JobBase):
 class Job(JobBase):
     id: int
     user_id: int
-    ranking_score: float | None = None
-    ranking_explanation: str | None = None
+    ranking_score: Union[float, None] = None
+    ranking_explanation: Union[str, None] = None
 
     model_config = ConfigDict(from_attributes=True)
