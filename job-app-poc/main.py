@@ -210,7 +210,7 @@ async def create_job_endpoint(user_id: int, job: schemas.JobCreate, db: Session 
         "title": created_job.title,
         "company": created_job.company,
         "description": created_job.description,
-        "owner_id": created_job.owner_id
+        "user_id": created_job.user_id
     })
 
 @app.get("/users/{user_id}/jobs/", response_model=List[schemas.Job], tags=["Jobs"])
@@ -235,7 +235,7 @@ def get_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
         "title": job.title,
         "company": job.company,
         "description": job.description,
-        "owner_id": job.owner_id,
+        "user_id": job.user_id,
         # Include any additional fields that might be in the response model
         "ranking_score": getattr(job, 'ranking_score', None),
         "ranking_explanation": getattr(job, 'ranking_explanation', None)
@@ -271,13 +271,13 @@ async def parse_and_create_job_endpoint(
         raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
 
     # Call LLM to extract title and company
-    extracted_info = await logic.extract_job_info_with_llm(job_input.description_text)
+    extracted_info = await logic.extract_job_info_with_llm(job_input.description)
 
     # Prepare data for database creation
     job_data_to_create = schemas.JobCreate(
         title=extracted_info.title,             # Use extracted title
         company=extracted_info.company,         # Use extracted company
-        description_text=job_input.description_text # Use original full text
+        description=job_input.description # Use original full text
     )
 
     # Create job in the database
@@ -304,10 +304,10 @@ class JobRankResponse(BaseModel):
     score: Optional[float] = None
     explanation: Optional[str] = None
 
-@app.post("/jobs/{job_id}/rank", response_model=JobRankResponse, tags=["LLM Features"])
-async def rank_job_endpoint(job_id: int, db: Session = Depends(get_db)):
+@app.post("/users/{user_id}/jobs/{job_id}/rank", response_model=JobRankResponse, tags=["LLM Features"])
+async def rank_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
     """Triggers LLM ranking for a specific job based on user 1's profile."""
-    user_id = 1
+    # user_id is now a parameter, no need to hardcode
     score, explanation = await logic.rank_job_with_llm(db=db, job_id=job_id, user_id=user_id)
     if score is None or explanation is None:
         raise HTTPException(status_code=500, detail="Failed to rank job using LLM")

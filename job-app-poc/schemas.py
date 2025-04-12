@@ -40,7 +40,7 @@ class FormFieldInfo(BaseModel):
 
 # --- Job Schemas ---
 class JobDescriptionInput(BaseModel):
-    description_text: str
+    description: str
 
 class ExtractedJobInfo(BaseModel):
     title: str
@@ -49,7 +49,7 @@ class ExtractedJobInfo(BaseModel):
 class JobBase(BaseModel):
     title: str
     company: str
-    description_text: str
+    description: str
 
 class JobCreate(JobBase):
     pass

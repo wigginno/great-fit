@@ -1,6 +1,8 @@
 import json
 import hashlib
 import functools
+import os
+import re
 import logging
 from sqlalchemy.orm import Session
 from typing import Any, Optional
@@ -92,7 +94,6 @@ async def rank_job_with_llm(db: Session, job_id: int, user_id: int):
         try:
             profile_data = json.loads(profile_json_string)
             profile_snippet = json.dumps({
-                "summary": profile_data.get("summary", "N/A"),
                 "skills": profile_data.get("skills", [])[:5], 
             })
         except json.JSONDecodeError:
@@ -102,7 +103,7 @@ async def rank_job_with_llm(db: Session, job_id: int, user_id: int):
              logger.error(f"Error processing profile for user {user_id}: {e}")
              profile_snippet = "Error processing profile."
 
-    job_description_text = db_job.description_text
+    job_description_text = db_job.description
 
     try:
         # Use the new structured job ranking function
@@ -134,7 +135,7 @@ async def suggest_resume_tailoring(job_description: str, profile_snippet: str):
         suggestions = await call_llm_for_resume_tailoring_cached(job_description, profile_snippet)
 
         # Format suggestions as a string
-        formatted_suggestions = "\n".join([f"- {suggestion}" for suggestion in suggestions.suggestions])
+        formatted_suggestions = "\n".join([suggestion for suggestion in suggestions.suggestions])
 
         logger.info("Successfully generated resume tailoring suggestions.")
         return formatted_suggestions.strip()
@@ -215,13 +216,20 @@ async def get_tailoring_suggestions(profile_text: str, job_description: str) -> 
 
     try:
         # Call the new structured tailoring suggestions function
-        suggestions = await call_llm_for_resume_tailoring_cached(job_description, profile_text)
+        response = await call_llm_for_resume_tailoring_cached(job_description, profile_text)
+
+        # Extract suggestions from TailoringSuggestions object
+        if hasattr(response, 'suggestions'):
+            suggestions = response.suggestions
+        else:
+            # Handle case where response might be the direct value
+            suggestions = response
 
         # Format suggestions as a string if they're returned as a list
         if isinstance(suggestions, list):
-            formatted_suggestions = "\n".join([f"- {suggestion}" for suggestion in suggestions])
+            formatted_suggestions = "\n".join([suggestion for suggestion in suggestions])
         else:
-            formatted_suggestions = suggestions
+            formatted_suggestions = str(suggestions)
 
         logger.info("Successfully generated tailoring suggestions.") 
         return formatted_suggestions
@@ -229,9 +237,6 @@ async def get_tailoring_suggestions(profile_text: str, job_description: str) -> 
     except Exception as e:
         logger.error(f"Error calling LLM for tailoring suggestions: {e}")
         raise Exception(f"LLM API call failed: {e}")
-
-def _summarize_profile(profile_data: dict[str, Any]) -> str:
-    return json.dumps(profile_data)
 
 # Resume parsing function using a single LLM call for structured output
 async def parse_resume_with_llm(resume_text: str) -> dict[str, Any]:
@@ -255,89 +260,27 @@ async def parse_resume_with_llm(resume_text: str) -> dict[str, Any]:
         # Extract skills
         resume_data["skills"] = parsed_data.skills
 
-        # Process sections to extract education, experience, and other information
-        education = []
-        experience = []
-        projects = []
-        summary = ""
+        # Convert sections from the LLM response to a dictionary format
+        resume_data["sections"] = []
 
-        # Process all sections from the parsed data
-        logger.info(f"Processing {len(parsed_data.sections)} sections from parsed resume")
-        sections = parsed_data.sections
-        for section in sections:
-            section_title = section.title.lower()
-            logger.info(f"Processing section: '{section.title}'")
+        # Process each section and convert to dictionary
+        for section in parsed_data.sections:
+            section_dict = {
+                "title": section.title,
+                "entries": section.entries,
+                "subsections": []
+            }
 
-            # Extract education information
-            if "education" in section_title:
-                logger.info(f"Found education section with {len(section.subsections)} subsections")
-                # Log detailed structure of education section
-                for i, subsection in enumerate(section.subsections):
-                    logger.info(f"Education subsection {i+1}: title='{subsection.title}', entries={len(subsection.entries)}")
-                    for j, entry in enumerate(subsection.entries):
-                        logger.info(f"  - Entry {j+1}: '{entry}'")
-                    edu_item = {
-                        "institution": subsection.title,
-                        "details": subsection.entries
-                    }
-                    education.append(edu_item)
-                # If no subsections, try to extract from entries directly
-                if len(section.subsections) == 0 and len(section.entries) > 0:
-                    logger.info(f"Education section has no subsections but {len(section.entries)} direct entries")
-                    for entry in section.entries:
-                        logger.info(f"Direct education entry: '{entry}'")
-                        # Try to extract institution from entry
-                        parts = entry.split(' - ', 1)
-                        if len(parts) > 1:
-                            institution = parts[0].strip()
-                            details = [parts[1].strip()]
-                        else:
-                            institution = "Unknown Institution"
-                            details = [entry]
-                        edu_item = {
-                            "institution": institution,
-                            "details": details
-                        }
-                        education.append(edu_item)
+            # Convert subsections to dictionary format
+            for subsection in section.subsections:
+                section_dict["subsections"].append({
+                    "title": subsection.title,
+                    "entries": subsection.entries
+                })
 
-            # Extract experience information
-            elif "experience" in section_title or "employment" in section_title:
-                for subsection in section.subsections:
-                    title_parts = subsection.title.split("-", 1)
-                    company = title_parts[0].strip() if len(title_parts) > 0 else ""
-                    position = title_parts[1].strip() if len(title_parts) > 1 else ""
+            # Add the processed section to resume_data
+            resume_data["sections"].append(section_dict)
 
-                    exp_item = {
-                        "company": company,
-                        "position": position,
-                        "description": subsection.entries
-                    }
-                    experience.append(exp_item)
-
-            # Extract projects information
-            elif "project" in section_title:
-                for subsection in section.subsections:
-                    project_item = {
-                        "name": subsection.title,
-                        "description": subsection.entries
-                    }
-                    projects.append(project_item)
-
-            # Extract summary information
-            elif "summary" in section_title or "objective" in section_title:
-                summary = "\n".join(section.entries)
-
-        # Add processed sections to resume_data
-        resume_data["education"] = education
-        resume_data["experience"] = experience
-
-        # Add optional sections if available
-        if projects:
-            resume_data["projects"] = projects
-        if summary:
-            resume_data["summary"] = summary
-
-        logger.info("Resume successfully parsed in a single LLM call")
         return resume_data
 
     except Exception as e:
@@ -345,6 +288,140 @@ async def parse_resume_with_llm(resume_text: str) -> dict[str, Any]:
         # Create a fallback structure with minimal data
         return {
             "skills": [],
-            "education": [],
-            "experience": []
+            "sections": []
         }
+
+# Job description formatter using LLM
+async def format_job_details_with_llm(job_description: str) -> dict:
+    """
+    Format and clean up a job description text using LLM.
+    Retains all important information but cleans up formatting quirks.
+
+    Args:
+        job_description: Raw job description text pasted from a job site
+
+    Returns:
+        Dictionary with cleaned up job description
+    """
+    try:
+        # Define the prompt for formatting the job description and extracting key information
+        prompt = f"""Please extract key information and clean up the formatting of this job description text.
+
+        1. First, extract these key pieces of information:
+           - Job Title: What is the exact title of the position?
+           - Company Name: What company posted this job?
+
+        2. Then clean up the formatting of the full description:
+           - Remove extraneous header/footer text unrelated to the job posting
+           - Fix inconsistent spacing and line breaks
+           - Properly format bullet points 
+           - Fix weird character encodings
+           - Format sections with clear headings
+           - Remove UI artifacts like 'Click to apply', 'Show more', etc.
+           - Remove social media buttons and other non-content elements
+
+        Do NOT summarize or paraphrase the content. Keep ALL the original information intact.
+
+        Here is the job description to clean up:
+
+        {job_description}
+
+        Your response should start with the extracted job title and company, followed by the full formatted description:
+        TITLE: [Extracted Job Title]
+        COMPANY: [Extracted Company Name]
+        DESCRIPTION: [Full formatted job description]
+        """
+
+        # Set up a simple request to the LLM
+        import openai
+        from openai import OpenAI
+        import os
+
+        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a job description formatter. You clean up raw job descriptions to make them more readable without losing any information."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,  # Lower temperature for more consistent formatting
+            max_tokens=2000
+        )
+
+        formatted_response = response.choices[0].message.content.strip()
+
+        # Extract the title, company, and description from the formatted response
+        job_title = "New Job"  # Default fallback
+        company_name = "Unknown Company"  # Default fallback
+        description_text = formatted_response  # Full text as fallback
+
+        # Try to parse the structured response
+        try:
+            # Look for the TITLE/COMPANY/DESCRIPTION markers
+            if "TITLE:" in formatted_response and "COMPANY:" in formatted_response and "DESCRIPTION:" in formatted_response:
+                # Extract title
+                title_match = re.search(r'TITLE:\s*(.+?)(?:\n|$)', formatted_response)
+                if title_match:
+                    job_title = title_match.group(1).strip()
+
+                # Extract company
+                company_match = re.search(r'COMPANY:\s*(.+?)(?:\n|$)', formatted_response)
+                if company_match:
+                    company_name = company_match.group(1).strip()
+
+                # Extract description
+                desc_match = re.search(r'DESCRIPTION:\s*(.+)', formatted_response, re.DOTALL)
+                if desc_match:
+                    description_text = desc_match.group(1).strip()
+            else:
+                # If no structured format found, try to extract from the first few lines
+                lines = formatted_response.split('\n')
+                if len(lines) > 2:
+                    if not job_title or job_title == "New Job":
+                        job_title = lines[0].strip()
+                    if not company_name or company_name == "Unknown Company":
+                        for line in lines[1:3]:  # Check the next few lines for company
+                            if len(line.strip()) > 0 and len(line.strip()) < 50:  # Company names are usually short
+                                company_name = line.strip()
+                                break
+        except Exception as e:
+            logger.error(f"Error extracting job details: {e}")
+            # Continue with defaults if extraction fails
+
+        return {
+            "title": job_title,
+            "company": company_name,
+            "description": description_text
+        }
+    except Exception as e:
+        logger.error(f"Error formatting job with LLM: {e}")
+        # Fall back to the original text if there's an error
+        return {
+            "description": job_description
+        }
+
+# Function to extract job title and company from description
+async def extract_job_info_with_llm(job_description: str) -> schemas.ExtractedJobInfo:
+    """
+    Extract job title and company name from a job description.
+
+    Args:
+        job_description: Raw job description text
+
+    Returns:
+        ExtractedJobInfo with title and company name
+    """
+    try:
+        # For now, return placeholder values
+        # In a real implementation, you'd call the LLM here to extract this information
+        return schemas.ExtractedJobInfo(
+            title="Job Position",
+            company="Company Name"
+        )
+    except Exception as e:
+        logger.error(f"Error extracting job info with LLM: {e}")
+        return schemas.ExtractedJobInfo(
+            title="Job Position",
+            company="Company Name"
+        )

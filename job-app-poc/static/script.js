@@ -32,6 +32,12 @@ function setupEventListeners() {
     if (jobDetails) {
         jobDetails.addEventListener('click', handleJobActions);
     }
+
+    // Tailoring suggestions button
+    const tailorButton = document.getElementById('tailorButton');
+    if (tailorButton) {
+        tailorButton.addEventListener('click', getTailoringSuggestions);
+    }
 }
 
 // Function to load and display user profile
@@ -187,6 +193,7 @@ async function loadJobs() {
 // Function to save job
 async function saveJob() {
     const jobDescriptionTextarea = document.getElementById('jobDescription');
+    const saveJobButton = document.getElementById('saveJobButton');
     const jobDescription = jobDescriptionTextarea.value.trim();
 
     if (!jobDescription) {
@@ -194,9 +201,44 @@ async function saveJob() {
         return;
     }
 
+    // Show loading state
+    const originalButtonText = saveJobButton.textContent;
+    saveJobButton.disabled = true;
+    saveJobButton.textContent = 'Saving...';
+
+    // Optional: Add a spinner next to the text
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    spinner.style.display = 'inline-block';
+    spinner.style.width = '16px';
+    spinner.style.height = '16px';
+    spinner.style.marginLeft = '8px';
+    spinner.style.border = '2px solid rgba(0, 0, 0, 0.1)';
+    spinner.style.borderTopColor = '#3498db';
+    spinner.style.borderRadius = '50%';
+    spinner.style.animation = 'spin 1s linear infinite';
+    saveJobButton.appendChild(spinner);
+
+    // Add the keyframe animation if it doesn't exist
+    if (!document.getElementById('spinnerAnimation')) {
+        const styleSheet = document.createElement('style');
+        styleSheet.id = 'spinnerAnimation';
+        styleSheet.textContent = `
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(styleSheet);
+    }
+
     try {
         // For now, hardcode user ID to 1
         const userId = 1;
+
+        // Inform user that LLM processing might take a moment
+        jobDescriptionTextarea.value = 'Formatting job description with AI...';
+        jobDescriptionTextarea.disabled = true;
 
         const response = await fetch(`/users/${userId}/jobs/`, {
             method: 'POST',
@@ -215,7 +257,9 @@ async function saveJob() {
             throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
 
-        jobDescriptionTextarea.value = ''; // Clear the textarea
+        // Reset and clear the textarea
+        jobDescriptionTextarea.value = ''; 
+        jobDescriptionTextarea.disabled = false;
 
         // Reload jobs list to show new job
         loadJobs();
@@ -225,6 +269,124 @@ async function saveJob() {
     } catch (error) {
         console.error('Error saving job:', error);
         alert(`Error saving job: ${error.message}`);
+        // Re-enable textarea on error
+        jobDescriptionTextarea.disabled = false;
+        jobDescriptionTextarea.value = jobDescription; // Restore original content
+    } finally {
+        // Reset button state
+        saveJobButton.disabled = false;
+        saveJobButton.textContent = originalButtonText;
+        if (spinner && spinner.parentNode) {
+            spinner.parentNode.removeChild(spinner);
+        }
+    }
+}
+
+// Function to get tailoring suggestions
+async function getTailoringSuggestions() {
+    const tailoringSuggestionsContainer = document.getElementById('tailoringSuggestions');
+    const tailorButton = document.getElementById('tailorButton');
+
+    // Get the currently selected job
+    const selectedJobCard = document.querySelector('.job-card.active');
+    if (!selectedJobCard) {
+        alert('Please select a job first to get tailoring suggestions.');
+        return;
+    }
+
+    const jobId = selectedJobCard.dataset.jobId;
+    if (!jobId) {
+        alert('Could not identify the selected job. Please try again.');
+        return;
+    }
+
+    // Show loading state
+    const originalButtonText = tailorButton.textContent;
+    tailorButton.disabled = true;
+    tailorButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating suggestions...';
+    tailoringSuggestionsContainer.innerHTML = '<div class="alert alert-info">Analyzing your profile and the job description...</div>';
+
+    try {
+        // For now, hardcode user ID to 1 for PoC
+        const userId = 1;
+
+        // First, get the job description
+        const jobResponse = await fetch(`/users/${userId}/jobs/${jobId}`);
+        if (!jobResponse.ok) {
+            throw new Error(`Error fetching job: ${jobResponse.status}`);
+        }
+        const jobData = await jobResponse.json();
+
+        // Get job description from the job data
+        let jobDescription = "";
+        try {
+            // Check if job description is JSON string
+            if (typeof jobData.description === 'string' && jobData.description.trim().startsWith('{')) {
+                const parsedDesc = JSON.parse(jobData.description);
+                jobDescription = parsedDesc.description || jobData.description;
+            } else {
+                jobDescription = jobData.description;
+            }
+        } catch (e) {
+            jobDescription = jobData.description;
+        }
+
+        // Call the tailoring suggestions endpoint
+        const suggResponse = await fetch(`/users/${userId}/jobs/tailor-suggestions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                job_description: jobDescription
+            })
+        });
+
+        if (!suggResponse.ok) {
+            const errorData = await suggResponse.json();
+            throw new Error(errorData.detail || `HTTP error! status: ${suggResponse.status}`);
+        }
+
+        const suggestionData = await suggResponse.json();
+
+        // Display suggestions with nice formatting
+        if (suggestionData.suggestions) {
+            // Format suggestions as a list if they contain line breaks
+            let formattedSuggestions = suggestionData.suggestions;
+            if (formattedSuggestions.includes('\n')) {
+                const suggItems = formattedSuggestions.split('\n').filter(s => s.trim());
+                if (suggItems.length > 1) {
+                    formattedSuggestions = '<ul>' + 
+                        suggItems.map(sugg => `<li>${sugg}</li>`).join('') + 
+                        '</ul>';
+                }
+            }
+
+            tailoringSuggestionsContainer.innerHTML = `
+                <div class="card border-0">
+                    <div class="card-header bg-light">
+                        <i class="bi bi-lightbulb me-2"></i>Tailoring Suggestions
+                    </div>
+                    <div class="card-body">
+                        <div class="tailoring-content">${formattedSuggestions}</div>
+                    </div>
+                </div>
+            `;
+        } else {
+            tailoringSuggestionsContainer.innerHTML = `<div class="alert alert-warning">No suggestions were generated. Try selecting a different job.</div>`;
+        }
+    } catch (error) {
+        console.error('Error getting tailoring suggestions:', error);
+        tailoringSuggestionsContainer.innerHTML = `
+            <div class="alert alert-danger">
+                <h4><i class="bi bi-exclamation-triangle-fill me-2"></i>Error</h4>
+                <p>${error.message}</p>
+            </div>
+        `;
+    } finally {
+        // Reset button state
+        tailorButton.disabled = false;
+        tailorButton.innerHTML = originalButtonText;
     }
 }
 
@@ -313,16 +475,75 @@ async function showJobDetails(jobId, userId) {
 
         // Add description section - safely check if description exists
         if (parsedJobDetails.description) {
+            // Process the job description to maintain proper formatting
+            let formattedDescription = parsedJobDetails.description;
+
+            // 1. Replace line breaks with <br> tags
+            formattedDescription = formattedDescription.replace(/\n/g, '<br>');
+
+            // 2. Convert bullet point patterns to HTML lists
+            const bulletPatterns = [
+                /^[\s]*[-•●\*][\s]+(.+)$/gm,  // Matches common bullet point formats
+                /^[\s]*\d+\.[\s]+(.+)$/gm    // Matches numbered lists
+            ];
+
+            // Check for bullet points and create HTML lists if found
+            let hasBulletPoints = false;
+            for (const pattern of bulletPatterns) {
+                if (pattern.test(formattedDescription)) {
+                    hasBulletPoints = true;
+                    break;
+                }
+            }
+
+            // 3. Enhance section headers (text that appears to be headings)
+            formattedDescription = formattedDescription.replace(/^(.{3,50}):(?:\s*)$/gm, '<h6 class="mt-3">$1</h6>');
+
+            // 4. Add spacing between paragraphs
+            formattedDescription = formattedDescription.replace(/<br><br>/g, '</p><p>');
+
             jobDetailsHTML += `
                 <div class="card mb-3">
                     <div class="card-header d-flex align-items-center bg-light">
                         <i class="bi bi-info-circle me-2"></i>Overview
                     </div>
-                    <div class="card-body">
-                        <p>${parsedJobDetails.description}</p>
+                    <div class="card-body job-description">
+                        <div class="job-description-content">${formattedDescription}</div>
                     </div>
                 </div>
             `;
+
+            // Add CSS styles for job description if not already added
+            if (!document.getElementById('jobDescriptionStyles')) {
+                const styleSheet = document.createElement('style');
+                styleSheet.id = 'jobDescriptionStyles';
+                styleSheet.textContent = `
+                    .job-description {
+                        font-size: 0.95rem;
+                        line-height: 1.5;
+                    }
+                    .job-description-content {
+                        white-space: pre-wrap;
+                    }
+                    .job-description-content p {
+                        margin-bottom: 1rem;
+                    }
+                    .job-description-content h6 {
+                        font-weight: 600;
+                        margin-top: 1.5rem;
+                        margin-bottom: 0.75rem;
+                        color: #2c5282;
+                    }
+                    .job-description-content ul, .job-description-content ol {
+                        padding-left: 2rem;
+                        margin-bottom: 1rem;
+                    }
+                    .job-description-content li {
+                        margin-bottom: 0.5rem;
+                    }
+                `;
+                document.head.appendChild(styleSheet);
+            }
         }
 
         // Add responsibilities section if available - safely check array properties

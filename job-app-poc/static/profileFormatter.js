@@ -4,7 +4,7 @@ function formatProfileData(data) {
 
     let html = '<div class="profile-content">';
     // Display skills section first (only special case)
-    if (data.skills && Array.isArray(data.skills)) {
+    if (data.skills) {
         html += '<div class="section">'
              + '<h2>Skills</h2>'
              + '<ul class="skills">'
@@ -14,7 +14,7 @@ function formatProfileData(data) {
     }
 
     // Process sections array
-    if (data.sections && Array.isArray(data.sections)) {
+    if (data.sections) {
         data.sections.forEach(section => {
             // Section = h2 header
             html += `<div class="section">`;
@@ -90,14 +90,19 @@ document.addEventListener('DOMContentLoaded', function() {
             margin-bottom: 20px;
         }
         h2 {
+            font-size: 1.5em;
             margin-bottom: 10px;
             padding-bottom: 4px;
             border-bottom: 1px solid #ddd;
         }
         h3 {
-            margin-top: 12px;
-            margin-bottom: 8px;
-            font-weight: 500;
+            font-size: 1.2em;
+            margin-top: 16px;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #2c5282;
+            padding-bottom: 3px;
+            border-bottom: 1px dotted #cbd5e0;
         }
         ul {
             margin-top: 8px;
@@ -113,15 +118,26 @@ document.addEventListener('DOMContentLoaded', function() {
         ul.skills {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
+            gap: 10px;
             list-style: none;
             padding-left: 0;
+            margin-top: 12px;
         }
         ul.skills li {
-            background-color: #f0f0f0;
-            padding: 4px 8px;
-            border-radius: 4px;
+            background-color: #f5f9ff;
+            padding: 6px 12px;
+            border-radius: 20px;
             display: inline-block;
+            font-size: 0.95em;
+            color: #2c5282;
+            border: 1px solid #cbd5e0;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            transition: all 0.2s ease;
+        }
+        ul.skills li:hover {
+            background-color: #ebf4ff;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
     `;
     document.head.appendChild(style);

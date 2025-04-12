@@ -19,7 +19,7 @@ class Job(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     title = Column(String)
     company = Column(String)
-    description_text = Column(String)
+    description = Column(String)
     ranking_score = Column(Float, nullable=True)
     ranking_explanation = Column(String, nullable=True)
 

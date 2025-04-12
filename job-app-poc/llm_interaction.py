@@ -135,14 +135,7 @@ If the resume DOES NOT have a dedicated section for skills, infer the skills fro
         max_tokens=2000,
         extra_body=EXTRA_BODY_PARAMS,
     )
-    for section in response.sections:
-        print(f"{section.title=}")
-        for subsection in section.subsections:
-            print(f"  {subsection.title=}")
-            for entry in subsection.entries:
-                print(f"    {entry=}")
-        for entry in section.entries:
-            print(f"  {entry=}")
+
     return response
 
 async def call_llm_for_job_ranking(job_description: str, applicant_profile: str) -> JobRanking:
