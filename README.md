@@ -40,11 +40,7 @@ This project uses Language Models (LLMs) to help you improve your job applicatio
     *   Edit `.env` and add your OpenRouter key:
         ```env
         # Get from OpenRouter account
-        OPENAI_API_KEY="sk-or-v1-..."
-        # Default OpenRouter endpoint
-        OPENAI_BASE_URL="https://openrouter.ai/api/v1"
-        # Optional: Specify model, e.g.:
-        # LLM_MODEL="mistralai/mistral-7b-instruct"
+        OPENROUTER_API_KEY="sk-or-v1-..."
         ```
 
 ## Running the PoC
