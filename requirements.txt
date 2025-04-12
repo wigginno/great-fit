@@ -4,6 +4,7 @@ sqlalchemy
 pydantic
 python-dotenv
 python-multipart # For form data/file uploads
+eval_type_backport  # For Python <3.10 compatibility
 
 # LLM Integration
 openai>=1.5.0  # For OpenRouter API
