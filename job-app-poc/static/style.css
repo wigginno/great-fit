@@ -105,6 +105,102 @@ textarea {
     font-style: italic;
 }
 
+/* Upload Form Styles */
+.upload-form {
+    margin-bottom: 15px;
+}
+
+.upload-area {
+    border: 2px dashed #3498db;
+    border-radius: 8px;
+    background: #f8f9fa;
+    padding: 25px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-height: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.upload-area:hover {
+    background-color: #e8f4fd;
+    border-color: #2980b9;
+}
+
+.upload-content {
+    width: 100%;
+}
+
+.upload-area .icon {
+    color: #3498db;
+    margin-bottom: 12px;
+}
+
+.upload-area h4 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 500;
+    color: #2c3e50;
+}
+
+.upload-area .note {
+    display: block;
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin-top: 5px;
+}
+
+.upload-area.highlight {
+    background-color: #e3f2fd;
+    border-color: #2196f3;
+    box-shadow: 0 0 10px rgba(33, 150, 243, 0.3);
+}
+
+.file-preview {
+    width: 100%;
+    padding: 15px;
+    border-radius: 6px;
+    background-color: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.file-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.file-icon {
+    font-size: 1.5rem;
+    color: #3498db;
+}
+
+.file-name {
+    font-weight: 500;
+    color: #2c3e50;
+    word-break: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+.remove-file {
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.remove-file:hover {
+    background-color: #f8d7da;
+    border-color: #dc3545;
+}
+
 /* Job List Styles */
 .job-list {
     margin-top: 15px;

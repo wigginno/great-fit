@@ -1,8 +1,6 @@
 import os
 import re
-import json
 import logging
-from typing import Any
 
 from openai import OpenAI
 from pydantic import BaseModel
@@ -132,7 +130,6 @@ If the resume DOES NOT have a dedicated section for skills, infer the skills fro
         model=MODEL_NAME,
         messages=messages,
         response_model=ResumeData,
-        max_tokens=2000,
         extra_body=EXTRA_BODY_PARAMS,
     )
 
@@ -141,20 +138,81 @@ If the resume DOES NOT have a dedicated section for skills, infer the skills fro
 async def call_llm_for_job_ranking(job_description: str, applicant_profile: str) -> JobRanking:
     """Call LLM for job ranking."""
 
-    system_prompt = """You are a job ranking assistant. Your task is to analyze the provided job description and applicant profile to determine the relevance of the applicant's profile to the job."""
+    system_prompt = """You are a job ranking assistant. Your task is to analyze the provided job description and applicant profile to determine the relevance of the applicant's profile to the job.
+    
+    You will output a job ranking score between 0.0 and 10.0, where 0.0 means no match at all and 10.0 means perfect match.
+    You will also provide a brief explanation of your reasoning.
+    """
+    
+    user_prompt = f"""Please analyze this job description and applicant profile and provide a match score and explanation:
+    
+    # Job Description
+    {job_description}
+    
+    # Applicant Profile
+    {applicant_profile}
+    
+    Format your response as a JSON object with 'score' (a float between 0.0 and 10.0) and 'explanation' (a string).
+    """
+    
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Job Description: {job_description}\nApplicant Profile: {applicant_profile}"},
+        {"role": "user", "content": user_prompt},
     ]
 
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=messages,
-        response_model=JobRanking,
-        max_tokens=2000,
-        extra_body=EXTRA_BODY_PARAMS,
-    )
-    return response
+    # First try with the instructor method
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            response_model=JobRanking,
+            extra_body=EXTRA_BODY_PARAMS,
+        )
+        return response
+    except Exception as e:
+        logger.warning(f"Error using instructor for job ranking: {e}")
+        
+        # Fallback to a regular request and parse the response manually
+        try:
+            # Create OpenAI client without instructor wrapper
+            standard_client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=OPENROUTER_API_KEY,
+                default_headers={
+                    "HTTP-Referer": APP_URL,
+                    "X-Title": APP_NAME,
+                }
+            )
+            
+            response = standard_client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                extra_body=EXTRA_BODY_PARAMS,
+            )
+            
+            # Extract and parse the response content
+            import json
+            import re
+            
+            content = response.choices[0].message.content
+            # Try to extract JSON if it's wrapped in ```json ... ``` or similar
+            json_match = re.search(r'```(?:json)?\s*({.*?})\s*```', content, re.DOTALL)
+            
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # Try to find a JSON object directly
+                json_match = re.search(r'{\s*"score"\s*:.*?"explanation"\s*:.*?}', content, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                else:
+                    # Just use the raw content and hope it's parseable
+                    json_str = content
+            data = json.loads(json_str)
+            return JobRanking(score=float(data.get("score", 0.5)), explanation=data.get("explanation", "No explanation provided"))
+        except Exception as fallback_error:
+            logger.error(f"Fallback method also failed: {fallback_error}")
+            return JobRanking(score=0.0, explanation=f"Error processing request: {str(e)}")
 
 async def call_llm_for_resume_tailoring(job_description: str, applicant_profile: str) -> TailoringSuggestions:
     """Call LLM for resume tailoring."""
@@ -173,7 +231,6 @@ Focus on incorporating keywords, highlighting relevant skills/experience, and us
         model=MODEL_NAME,
         messages=messages,
         response_model=TailoringSuggestions,
-        max_tokens=2000,
         extra_body=EXTRA_BODY_PARAMS,
     )
     return response

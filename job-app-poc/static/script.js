@@ -5,14 +5,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Set up event listeners for form submissions
     setupEventListeners();
+
+    // Initialize the file upload functionality
+    initializeFileUpload();
 });
 
 // Set up all event listeners
 function setupEventListeners() {
-    // Resume upload form
-    const resumeUploadForm = document.getElementById('resumeUploadForm');
-    if (resumeUploadForm) {
-        resumeUploadForm.addEventListener('submit', handleResumeUpload);
+    // Upload and clear buttons for resume
+    const uploadResumeButton = document.getElementById('uploadResumeButton');
+    if (uploadResumeButton) {
+        uploadResumeButton.addEventListener('click', uploadResumeFile);
+    }
+
+    const clearUploadButton = document.getElementById('clearUploadButton');
+    if (clearUploadButton) {
+        clearUploadButton.addEventListener('click', clearResumeUpload);
     }
 
     // Save job button
@@ -38,6 +46,213 @@ function setupEventListeners() {
     if (tailorButton) {
         tailorButton.addEventListener('click', getTailoringSuggestions);
     }
+}
+
+// Initialize custom file upload functionality
+function initializeFileUpload() {
+    console.log('Initializing file upload with simplified approach...');
+
+    // Get references to necessary elements
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('resumeFile');
+    const uploadActions = document.getElementById('uploadActions');
+    const uploadStatus = document.getElementById('uploadStatus');
+
+    // Clear any previous state
+    window.selectedResumeFile = null;
+    if (fileInput) fileInput.value = '';
+    if (uploadActions) uploadActions.style.display = 'none';
+    if (uploadStatus) uploadStatus.innerHTML = '';
+
+    // Setup click handler - when upload area is clicked, trigger file input
+    if (uploadArea) {
+        uploadArea.addEventListener('click', function(e) {
+            // Don't trigger file dialog if clicking remove button
+            if (e.target.closest('.remove-file')) return;
+            if (fileInput) fileInput.click();
+        });
+
+        // Setup drag and drop handlers
+        uploadArea.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.classList.add('highlight');
+        });
+
+        uploadArea.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.classList.remove('highlight');
+        });
+
+        uploadArea.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.classList.remove('highlight');
+            
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFileSelected(e.dataTransfer.files[0]);
+            }
+        });
+    }
+
+    // Setup file input change handler
+    if (fileInput) {
+        fileInput.addEventListener('change', function() {
+            if (this.files && this.files.length > 0) {
+                handleFileSelected(this.files[0]);
+            }
+        });
+    }
+
+    // Function to handle when a file is selected
+    function handleFileSelected(file) {
+        if (!file) return;
+        
+        console.log('File selected:', file.name);
+        
+        // Validate file type
+        const validTypes = ['.pdf', '.docx', '.doc', '.txt'];
+        const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+        
+        if (!validTypes.includes(fileExtension)) {
+            if (uploadStatus) {
+                uploadStatus.innerHTML = `<div class="alert alert-danger">Invalid file type. Please upload PDF, DOCX, DOC, or TXT files only.</div>`;
+            }
+            return;
+        }
+        
+        // Validate file size (10MB limit)
+        if (file.size > 10 * 1024 * 1024) {
+            if (uploadStatus) {
+                uploadStatus.innerHTML = `<div class="alert alert-danger">File is too large. Maximum file size is 10MB.</div>`;
+            }
+            return;
+        }
+        
+        // Store the file for later submission
+        window.selectedResumeFile = file;
+        
+        // Get appropriate icon based on file type
+        let fileIcon = 'bi-file-text';
+        if (fileExtension === '.pdf') fileIcon = 'bi-file-pdf';
+        else if (['.docx', '.doc'].includes(fileExtension)) fileIcon = 'bi-file-word';
+        
+        // Update UI to show selected file
+        if (uploadArea) {
+            uploadArea.innerHTML = `
+                <div class="file-preview">
+                    <div class="file-info">
+                        <i class="bi ${fileIcon} file-icon"></i>
+                        <span class="file-name">${file.name}</span>
+                    </div>
+                    <button type="button" class="remove-file btn btn-sm btn-outline-danger">
+                        <i class="bi bi-x"></i> Remove
+                    </button>
+                </div>
+            `;
+            
+            // Add click handler for remove button
+            const removeButton = uploadArea.querySelector('.remove-file');
+            if (removeButton) {
+                removeButton.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    resetFileUpload();
+                });
+            }
+        }
+        
+        // Show upload actions
+        if (uploadActions) uploadActions.style.display = 'block';
+        if (uploadStatus) uploadStatus.innerHTML = '';
+    }
+}
+
+// Function to upload the resume file
+function uploadResumeFile() {
+    console.log('Uploading resume file...');
+    const uploadStatus = document.getElementById('uploadStatus');
+
+    // Check if a file is selected
+    if (!window.selectedResumeFile) {
+        if (uploadStatus) {
+            uploadStatus.innerHTML = '<div class="alert alert-warning">Please select a file to upload!</div>';
+        }
+        return;
+    }
+
+    // Show processing indicator
+    if (uploadStatus) {
+        uploadStatus.innerHTML = '<div class="alert alert-info">Processing resume... <div class="spinner-border spinner-border-sm text-primary ms-2" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+    }
+
+    // Create form data and append the file
+    const formData = new FormData();
+    formData.append('resume', window.selectedResumeFile);
+
+    // Send the file using fetch API
+    fetch('/users/1/resume/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.detail || 'Upload failed');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Resume processed successfully:', data);
+        if (uploadStatus) {
+            uploadStatus.innerHTML = '<div class="alert alert-success">Resume uploaded and processed successfully!</div>';
+        }
+        // Reload profile with the new data
+        loadProfile();
+    })
+    .catch(error => {
+        console.error('Error processing resume:', error);
+        if (uploadStatus) {
+            uploadStatus.innerHTML = `<div class="alert alert-danger">Error processing resume: ${error.message}</div>`;
+        }
+    });
+}
+
+
+
+// Function to reset the file upload
+function resetFileUpload() {
+    console.log('Resetting file upload...');
+    
+    // Get references to elements
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('resumeFile');
+    const uploadActions = document.getElementById('uploadActions');
+    const uploadStatus = document.getElementById('uploadStatus');
+    
+    // Reset state
+    window.selectedResumeFile = null;
+    if (fileInput) fileInput.value = '';
+    if (uploadActions) uploadActions.style.display = 'none';
+    if (uploadStatus) uploadStatus.innerHTML = '';
+    
+    // Reset upload area to initial state
+    if (uploadArea) {
+        uploadArea.innerHTML = `
+            <div class="upload-content">
+                <div class="icon"><i class="bi bi-cloud-upload" style="font-size: 3rem;"></i></div>
+                <h4>Drag & drop your resume here</h4>
+                <span class="note">(or click to browse for a file)</span>
+                <div class="form-text mt-2">Accepted formats: PDF, Word (DOCX/DOC), and TXT</div>
+            </div>
+        `;
+    }
+}
+
+// For backward compatibility
+function clearResumeUpload() {
+    resetFileUpload();
 }
 
 // Function to load and display user profile
@@ -85,58 +300,6 @@ async function loadProfile() {
                 <p>${error.message}</p>
             </div>
         `;
-    }
-}
-
-// Function to handle resume upload
-async function handleResumeUpload(event) {
-    event.preventDefault();
-
-    const uploadStatus = document.getElementById('uploadStatus');
-    uploadStatus.innerHTML = '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div> Uploading resume...';
-
-    const fileInput = document.getElementById('resumeFile');
-    const file = fileInput.files[0];
-
-    if (!file) {
-        uploadStatus.innerHTML = '<div class="alert alert-danger">Please select a file to upload</div>';
-        return;
-    }
-
-    // Check file type
-    const allowedTypes = ['.pdf', '.docx', '.doc', '.txt'];
-    const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-
-    if (!allowedTypes.includes(fileExtension)) {
-        uploadStatus.innerHTML = '<div class="alert alert-danger">Invalid file type. Please upload PDF, DOCX, DOC, or TXT files only.</div>';
-        return;
-    }
-
-    // Create form data for file upload
-    const formData = new FormData();
-    formData.append('resume', file);
-
-    try {
-        // Hard-coded user ID for PoC
-        const userId = 1;
-
-        const response = await fetch(`/users/${userId}/resume/upload`, {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-        }
-
-        uploadStatus.innerHTML = '<div class="alert alert-success">Resume uploaded successfully!</div>';
-
-        // Reload profile with the new data
-        loadProfile();
-    } catch (error) {
-        console.error('Error uploading resume:', error);
-        uploadStatus.innerHTML = `<div class="alert alert-danger">Error uploading resume: ${error.message}</div>`;
     }
 }
 
