@@ -174,6 +174,7 @@ async def call_llm_for_job_ranking(
     job_ranking = response.choices[0].message.parsed
     return job_ranking
 
+
 async def call_llm_for_resume_tailoring(
     job_description: str, applicant_profile: str
 ) -> TailoringSuggestions:
