@@ -2,10 +2,22 @@ import os
 import re
 import json
 import logging
-
+from typing import Optional
 from openai import OpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+import crud
+import models
+import schemas
+from schemas import (
+    CleanedJobDescription,
+    ResumeData,
+    FormFieldInfo,
+    JobRanking,
+    Subsection,
+    Section,
+)
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -90,27 +102,16 @@ PARSED_RESUME_OUTPUT_EXAMPLE = re.sub(
 ).replace("\n", "")
 
 
-# Pydantic models
-class Subsection(BaseModel):
-    title: str
-    entries: list[str]
+# Removed inline Pydantic models for resume parsing (Subsection, Section, ResumeData)
+# These are now imported from schemas.py
 
 
-class Section(BaseModel):
-    title: str
-    subsections: list[Subsection]
-    entries: list[str]
-
-
-class ResumeData(BaseModel):
-    sections: list[Section]
-    skills: list[str]
-
-
-class JobRanking(BaseModel):
-    score: float
-    explanation: str
-
+class CleanedJobDescription(BaseModel):
+    title: str = Field(description="The official job title.")
+    company: str = Field(description="The name of the hiring company.")
+    location: Optional[str] = Field(None, description="The job location (e.g., 'City, State' or 'Remote').")
+    url: Optional[str] = Field(None, description="The original URL of the job posting.")
+    cleaned_text: str = Field(description="The full job description, cleaned and formatted for readability (e.g., using markdown for headers, bullets). Remove extraneous webpage elements like navigation links, ads, etc.")
 
 class TailoringSuggestions(BaseModel):
     suggestions: list[str]
@@ -137,6 +138,37 @@ If the resume DOES NOT have a dedicated section for skills, infer the skills fro
     )
     resume_data = response.choices[0].message.parsed
     return resume_data
+
+
+async def call_llm_to_clean_job_markdown(markdown_content: str) -> CleanedJobDescription:
+    """Uses LLM to clean raw markdown from a job posting webpage and extract key details."""
+
+    system_prompt = f"""You are an expert job description cleaner and parser. You will receive raw text/markdown scraped from a job posting webpage. 
+Your task is to:
+1. Extract the job title, company name, location, and the original URL if present in the text.
+2. Clean the main body of the job description, removing any website navigation, ads, footers, headers, or other irrelevant text.
+3. Format the cleaned job description text for readability, using markdown for structure (like headers #, ## and bullet points *). Ensure all essential information (responsibilities, qualifications, benefits, etc.) is preserved.
+4. Return ONLY a JSON object adhering to the CleanedJobDescription schema. If the URL is not found in the text, return null for the url field.
+
+Schema:
+```json
+{schemas.CleanedJobDescription.model_json_schema()}
+```
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Here is the raw job posting markdown:\n\n{markdown_content}"},
+    ]
+
+    response = client.beta.chat.completions.parse(
+        model=MODEL_NAME, 
+        messages=messages,
+        response_format=schemas.CleanedJobDescription,
+    )
+
+    cleaned_job_data = response.choices[0].message.parsed
+    return cleaned_job_data
 
 
 async def call_llm_for_job_ranking(

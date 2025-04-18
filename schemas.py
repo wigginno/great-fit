@@ -1,9 +1,9 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Union
 
 
 class UserProfileBase(BaseModel):
-    profile_data: dict  # Simple dict for PoC profile
+    profile_data: dict
 
 
 class UserProfileCreate(UserProfileBase):
@@ -27,9 +27,7 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
-    profile: Union[UserProfile, None] = (
-        None  # Assuming profile is optional or loaded later
-    )
+    profile: Union[UserProfile, None] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -68,3 +66,51 @@ class Job(JobBase):
     ranking_explanation: Union[str, None] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Request model for raw markdown from Chrome extension ---
+class JobMarkdownRequest(BaseModel):
+    markdown_content: str
+
+
+# --- Pydantic Models for Tailoring Suggestions --- #
+class TailoringRequest(BaseModel):
+    job_description: str
+
+
+class TailoringResponse(BaseModel):
+    suggestions: list[str] # Changed from str to list[str] based on LLM function
+
+
+# --- Pydantic Model for LLM Cleaned Job Data from Extension --- #
+class CleanedJobDescription(BaseModel):
+    title: str = Field(..., description="The official job title extracted from the text.")
+    company: str = Field(..., description="The name of the company hiring, extracted from the text.")
+    location: str = Field(..., description="The primary location(s) for the job, extracted from the text.")
+    url: Optional[str] = Field(None, description="The original URL of the job posting, if available in the source text.")
+    cleaned_markdown: str = Field(..., description="The full job description, cleaned of irrelevant elements and formatted in markdown, preserving all essential details.")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- Pydantic Models for Resume Parsing --- #
+class Subsection(BaseModel):
+    title: Optional[str] = None
+    entries: list[str]
+
+
+class Section(BaseModel):
+    title: str
+    subsections: list[Subsection]
+    entries: list[str]
+
+
+class ResumeData(BaseModel):
+    sections: list[Section]
+    skills: list[str]
+
+
+# --- Pydantic Model for Job Ranking --- #
+class JobRanking(BaseModel):
+    score: float = Field(..., description="A score between 0.0 and 1.0 indicating job fit.")
+    explanation: str = Field(..., description="A brief explanation of the ranking score.")

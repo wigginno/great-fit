@@ -7,16 +7,23 @@
     "48": "icons/icon48.png"
   },
   "action": {
-    "default_title": "Convert Page to Markdown"
+    "default_title": "Save Job to Great Fit"
   },
   "permissions": [
     "scripting",
     "activeTab",
-    "clipboardWrite",
-    "offscreen",
     "notifications"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*"
   ],
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [ "turndown.min.js", "icons/icon48.png" ],
+      "matches": [ "<all_urls>" ]
+    }
+  ]
 }

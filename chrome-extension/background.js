@@ -1,28 +1,5 @@
 // A global promise to avoid race conditions creating the offscreen document
-let creating;
-
-// Function to get the existing offscreen document or create a new one
-async function setupOffscreenDocument(path) {
-  // Check if we already have an offscreen document.
-  if (await chrome.offscreen.hasDocument?.()) {
-    console.log("Offscreen document already exists.");
-    return;
-  }
-
-  // Avoid race conditions - create only one instance
-  if (creating) {
-    await creating;
-  } else {
-    creating = chrome.offscreen.createDocument({
-      url: path,
-      reasons: [chrome.offscreen.Reason.CLIPBOARD],
-      justification: "Needed to copy generated Markdown to the clipboard",
-    });
-    await creating;
-    creating = null; // Reset the promise
-    console.log("Offscreen document created.");
-  }
-}
+// Removed offscreen document logic
 
 chrome.action.onClicked.addListener(async (tab) => {
   // Ensure the tab has a valid ID
@@ -38,7 +15,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: [
-        "https://cdn.jsdelivr.net/npm/turndown@7.1.3/dist/turndown.min.js",
+        "turndown.min.js", // Load local file
         "content-converter.js",
       ],
     });
@@ -48,13 +25,20 @@ chrome.action.onClicked.addListener(async (tab) => {
         "Script injection failed:",
         chrome.runtime.lastError.message,
       );
+      // Show user feedback for injection failure
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon48.png', // Optional: add an icon
+        title: 'Great Fit Saver',
+        message: 'Error: Could not inject script into the page.',
+        priority: 1
+      });
       return;
     }
 
     if (results && results.length > 0 && results[0].result) {
       const markdownContent = results[0].result;
       console.log("Markdown received from content script.");
-      // Log the beginning of the received content
       console.log(
         "Received content (start):",
         typeof markdownContent === "string"
@@ -62,63 +46,99 @@ chrome.action.onClicked.addListener(async (tab) => {
           : "[Not a string]",
       );
 
-      if (markdownContent.startsWith("Error:")) {
-        console.error("Content script reported an error:", markdownContent);
-        // Handle error - maybe show a notification
+      if (typeof markdownContent !== 'string' || markdownContent.startsWith("Error:")) {
+        console.error("Content script reported an error or returned invalid data:", markdownContent);
+        chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icons/icon48.png',
+            title: 'Great Fit Saver',
+            message: 'Error: Could not extract job content from the page.',
+            priority: 1
+        });
         return;
       }
 
-      // Setup and send to offscreen document
-      await setupOffscreenDocument("offscreen.html");
+      // ---- START API Call ----
+      const userId = 1; // Hardcoded user ID for now
+      const apiUrl = `http://127.0.0.1:8000/users/${userId}/jobs/from_extension`;
 
-      console.log("Sending markdown to offscreen document for copying...");
-      const response = await chrome.runtime.sendMessage({
-        type: "copy-to-clipboard",
-        target: "offscreen-doc",
-        data: markdownContent,
-      });
+      console.log(`Sending markdown to backend API: ${apiUrl}`);
 
-      console.log("Message sent, response:", response);
-      // Optional: Close the offscreen document after a short delay
-      // This gives the clipboard time to process. Adjust as needed.
-      // setTimeout(async () => {
-      //   if (await chrome.offscreen.hasDocument?.()) {
-      //      await chrome.offscreen.closeDocument();
-      //      console.log("Offscreen document closed.");
-      //   }
-      // }, 2000);
+      try {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Add any other headers like Authorization if needed in the future
+          },
+          body: JSON.stringify({ markdown_content: markdownContent }),
+        });
 
-      // Add user feedback here (e.g., notification)
-      /*
-      chrome.notifications.create({
-        type: 'basic',
-        title: 'HTML to Markdown',
-        message: 'Markdown copied to clipboard!',
-        priority: 0
-      });
-      */
+        if (response.ok) {
+          const responseData = await response.json(); // Assuming backend returns the saved job details
+          console.log("Backend API call successful:", responseData);
+          // Show success notification
+          chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icons/icon48.png',
+            title: 'Great Fit Saver',
+            message: `Job "${responseData.title || 'Unknown'}" saved successfully!`, // Use title from response if available
+            priority: 0
+          });
+        } else {
+          // Handle API errors (e.g., 4xx, 5xx)
+          let errorDetail = `HTTP error! Status: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            errorDetail = errorData.detail || JSON.stringify(errorData);
+          } catch (e) {
+             // Could not parse error JSON, use status text
+             errorDetail = response.statusText;
+          }
+          console.error("Backend API call failed:", response.status, errorDetail);
+          chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icons/icon48.png',
+            title: 'Great Fit Saver Error',
+            message: `Failed to save job: ${errorDetail}`,
+            priority: 1
+          });
+        }
+      } catch (networkError) {
+        // Handle network errors (e.g., server unreachable)
+        console.error("Network error calling backend API:", networkError);
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icons/icon48.png',
+          title: 'Great Fit Saver Error',
+          message: `Network Error: Could not connect to the server. Is it running?`, // More specific message
+          priority: 1
+        });
+      }
+      // ---- END API Call ----
+
     } else {
       console.warn(
         "Script injection succeeded, but no markdown result returned.",
       );
-      // Handle case where no result is returned
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon48.png',
+        title: 'Great Fit Saver',
+        message: 'Could not find job content on the page.',
+        priority: 1
+      });
     }
   } catch (err) {
     console.error(`Failed to execute script or handle result: ${err}`, err);
-    // Add user feedback for failure
+    chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon48.png',
+        title: 'Great Fit Saver Error',
+        message: `An unexpected error occurred: ${err.message}`,
+        priority: 1
+    });
   }
 });
 
-// Optional: Listen for messages back from offscreen if needed (e.g., confirmation)
-// chrome.runtime.onMessage.addListener((message) => {
-//   if (message.type === 'copy-success') {
-//     console.log('Background script received copy success confirmation.');
-//   } else if (message.type === 'copy-failure') {
-//     console.error('Background script received copy failure:', message.error);
-//   }
-// });
-
 console.log("Background service worker started and listener added.");
-
-// Add permission requirement for notifications
-// Need to add "notifications" to manifest.json permissions array!
