@@ -50,8 +50,6 @@ function setupEventListeners() {
 
 // Initialize custom file upload functionality
 function initializeFileUpload() {
-  console.log("Initializing file upload with simplified approach...");
-
   // Get references to necessary elements
   const uploadArea = document.getElementById("uploadArea");
   const fileInput = document.getElementById("resumeFile");

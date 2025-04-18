@@ -7,10 +7,9 @@ from typing import List, Dict, Optional
 import json
 from pydantic import BaseModel
 import os
-import io
 import tempfile
 from fastapi import status
-import PyPDF2
+import fitz
 from docx import Document
 
 import models, schemas, crud, logic
@@ -74,12 +73,10 @@ async def extract_text_from_resume(file: UploadFile) -> str:
 
     try:
         if content_type == "application/pdf":
-            # Extract text from PDF
-            with io.BytesIO(file_content) as pdf_file:
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
-                for page_num in range(len(pdf_reader.pages)):
-                    page = pdf_reader.pages[page_num]
-                    extracted_text += page.extract_text() + "\n"
+            # Extract text from PDF using PyMuPDF (fitz)
+            with fitz.open(stream=file_content, filetype="pdf") as doc:
+                for page in doc:
+                    extracted_text += page.get_text() + "\n"
 
         elif content_type in [
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

@@ -306,7 +306,9 @@ async def parse_resume_with_llm(resume_text: str) -> dict[str, Any]:
     """
     try:
         # Use the new structured resume parsing function
+        print("HERE1")
         parsed_data = await call_llm_for_resume_parsing_cached(resume_text)
+        print("HERE2")
 
         # Map the new structure to the expected structure
         resume_data = {}
@@ -338,6 +340,7 @@ async def parse_resume_with_llm(resume_text: str) -> dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Error parsing resume with LLM: {e}")
+        raise e
         # Create a fallback structure with minimal data
         return {"skills": [], "sections": []}
 

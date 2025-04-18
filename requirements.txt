@@ -11,7 +11,7 @@ openai>=1.5.0  # For OpenRouter API
 instructor>=0.5.0  # For structured outputs
 
 # Document parsing
-PyPDF2
+PyMuPDF
 python-docx
 aiofiles
 
