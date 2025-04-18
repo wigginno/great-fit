@@ -1,4 +1,4 @@
-# Job Application Assistant
+# Great Fit - Job Application Assistant
 
 This project uses Language Models (LLMs) to help you improve your job applications. The current code is a **Proof-of-Concept (PoC)** with the following features:
 
