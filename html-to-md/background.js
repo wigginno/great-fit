@@ -5,8 +5,8 @@ let creating;
 async function setupOffscreenDocument(path) {
   // Check if we already have an offscreen document.
   if (await chrome.offscreen.hasDocument?.()) {
-      console.log("Offscreen document already exists.");
-      return;
+    console.log("Offscreen document already exists.");
+    return;
   }
 
   // Avoid race conditions - create only one instance
@@ -16,7 +16,7 @@ async function setupOffscreenDocument(path) {
     creating = chrome.offscreen.createDocument({
       url: path,
       reasons: [chrome.offscreen.Reason.CLIPBOARD],
-      justification: 'Needed to copy generated Markdown to the clipboard',
+      justification: "Needed to copy generated Markdown to the clipboard",
     });
     await creating;
     creating = null; // Reset the promise
@@ -34,51 +34,59 @@ chrome.action.onClicked.addListener(async (tab) => {
   console.log(`Action clicked on tab: ${tab.id}`);
 
   try {
-    console.log('Injecting content script into tab:', tab.id);
+    console.log("Injecting content script into tab:", tab.id);
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: [
-        'https://cdn.jsdelivr.net/npm/turndown@7.1.3/dist/turndown.min.js',
-        'content-converter.js'
+        "https://cdn.jsdelivr.net/npm/turndown@7.1.3/dist/turndown.min.js",
+        "content-converter.js",
       ],
     });
 
     if (chrome.runtime.lastError) {
-        console.error('Script injection failed:', chrome.runtime.lastError.message);
-        return;
+      console.error(
+        "Script injection failed:",
+        chrome.runtime.lastError.message,
+      );
+      return;
     }
 
     if (results && results.length > 0 && results[0].result) {
       const markdownContent = results[0].result;
-      console.log('Markdown received from content script.');
+      console.log("Markdown received from content script.");
       // Log the beginning of the received content
-      console.log('Received content (start):', typeof markdownContent === 'string' ? markdownContent.substring(0, 500) + '...' : '[Not a string]');
+      console.log(
+        "Received content (start):",
+        typeof markdownContent === "string"
+          ? markdownContent.substring(0, 500) + "..."
+          : "[Not a string]",
+      );
 
-      if (markdownContent.startsWith('Error:')) {
-          console.error('Content script reported an error:', markdownContent);
-          // Handle error - maybe show a notification
-          return;
+      if (markdownContent.startsWith("Error:")) {
+        console.error("Content script reported an error:", markdownContent);
+        // Handle error - maybe show a notification
+        return;
       }
 
       // Setup and send to offscreen document
-      await setupOffscreenDocument('offscreen.html');
+      await setupOffscreenDocument("offscreen.html");
 
-      console.log('Sending markdown to offscreen document for copying...');
+      console.log("Sending markdown to offscreen document for copying...");
       const response = await chrome.runtime.sendMessage({
-        type: 'copy-to-clipboard',
-        target: 'offscreen-doc',
-        data: markdownContent
+        type: "copy-to-clipboard",
+        target: "offscreen-doc",
+        data: markdownContent,
       });
 
-      console.log('Message sent, response:', response);
-      // Optional: Close the offscreen document after a short delay 
+      console.log("Message sent, response:", response);
+      // Optional: Close the offscreen document after a short delay
       // This gives the clipboard time to process. Adjust as needed.
       // setTimeout(async () => {
       //   if (await chrome.offscreen.hasDocument?.()) {
       //      await chrome.offscreen.closeDocument();
       //      console.log("Offscreen document closed.");
       //   }
-      // }, 2000); 
+      // }, 2000);
 
       // Add user feedback here (e.g., notification)
       /*
@@ -89,12 +97,12 @@ chrome.action.onClicked.addListener(async (tab) => {
         priority: 0
       });
       */
-
     } else {
-        console.warn('Script injection succeeded, but no markdown result returned.');
-        // Handle case where no result is returned
+      console.warn(
+        "Script injection succeeded, but no markdown result returned.",
+      );
+      // Handle case where no result is returned
     }
-
   } catch (err) {
     console.error(`Failed to execute script or handle result: ${err}`, err);
     // Add user feedback for failure
