@@ -10,12 +10,12 @@ def get_user_by_id(db: Session, user_id: int):
     """Get a user by their primary key ID."""
     return db.query(models.User).filter(models.User.id == user_id).first()
 
+
 def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.email == email).first()
 
 
 def create_user(db: Session, user: schemas.UserCreate):
-    # In a real app, hash the password here
     db_user = models.User(email=user.email)
     db.add(db_user)
     db.flush()  # Assign ID without committing
@@ -49,10 +49,11 @@ def create_or_update_user_profile(
 
 # --- Job CRUD ---
 def create_job(db: Session, job: schemas.JobCreate, user_id: int):
-    db_job = models.Job(**job.model_dump(), user_id=user_id)
+    db_job = models.Job(
+        **job.model_dump(exclude_unset=True), user_id=user_id
+    )  # Corrected kwarg
     db.add(db_job)
-    db.commit()  # Explicitly commit the transaction
-    db.flush()
+    db.flush()  # Flush to assign ID and make object persistent before refreshing
     db.refresh(db_job)
     return db_job
 
@@ -83,8 +84,7 @@ def update_job_ranking(
     db_job.ranking_score = score
     db_job.ranking_explanation = explanation
     db.add(db_job)
-    db.flush()
-    db.refresh(db_job)
+    # db.refresh(db_job) # REMOVED - Caller should refresh after commit if needed
     return db_job
 
 

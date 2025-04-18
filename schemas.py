@@ -79,16 +79,28 @@ class TailoringRequest(BaseModel):
 
 
 class TailoringResponse(BaseModel):
-    suggestions: list[str] # Changed from str to list[str] based on LLM function
+    suggestions: list[str]  # Changed from str to list[str] based on LLM function
 
 
 # --- Pydantic Model for LLM Cleaned Job Data from Extension --- #
 class CleanedJobDescription(BaseModel):
-    title: str = Field(..., description="The official job title extracted from the text.")
-    company: str = Field(..., description="The name of the company hiring, extracted from the text.")
-    location: str = Field(..., description="The primary location(s) for the job, extracted from the text.")
-    url: Optional[str] = Field(None, description="The original URL of the job posting, if available in the source text.")
-    cleaned_markdown: str = Field(..., description="The full job description, cleaned of irrelevant elements and formatted in markdown, preserving all essential details.")
+    title: str = Field(
+        ..., description="The official job title extracted from the text."
+    )
+    company: str = Field(
+        ..., description="The name of the company hiring, extracted from the text."
+    )
+    location: str = Field(
+        ..., description="The primary location(s) for the job, extracted from the text."
+    )
+    url: Optional[str] = Field(
+        None,
+        description="The original URL of the job posting, if available in the source text.",
+    )
+    cleaned_markdown: str = Field(
+        ...,
+        description="The full job description, cleaned of irrelevant elements and formatted in markdown, preserving all essential details.",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -112,5 +124,9 @@ class ResumeData(BaseModel):
 
 # --- Pydantic Model for Job Ranking --- #
 class JobRanking(BaseModel):
-    score: float = Field(..., description="A score between 0.0 and 1.0 indicating job fit.")
-    explanation: str = Field(..., description="A brief explanation of the ranking score.")
+    score: float = Field(
+        ..., description="A score between 0.0 and 1.0 indicating job fit."
+    )
+    explanation: str = Field(
+        ..., description="A brief explanation of the ranking score."
+    )

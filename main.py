@@ -1,7 +1,18 @@
-from fastapi import FastAPI, Depends, HTTPException, Path, UploadFile, File, Request, Form
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    Path,
+    UploadFile,
+    File,
+    Request,
+    Form,
+    BackgroundTasks,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
 import json
@@ -12,9 +23,12 @@ from fastapi import status
 import fitz
 from docx import Document
 import logging
+import asyncio
+from sse_starlette.sse import EventSourceResponse
+import json
 
 import models, schemas, crud, logic, llm_interaction
-from database import SessionLocal, create_db_and_tables, get_db
+from database import SessionLocal, engine, create_db_and_tables, get_db
 
 # Create DB tables on startup
 create_db_and_tables()
@@ -28,6 +42,9 @@ app = FastAPI(
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Semaphore to limit concurrent database writes for SQLite
+db_write_semaphore = asyncio.Semaphore(1)
 
 # --- CORS Middleware --- Set up CORS
 # Allow all origins for PoC purposes
@@ -43,6 +60,75 @@ app.add_middleware(
 
 # Mount static files directory
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Templates directory
+templates = Jinja2Templates(directory="templates")
+
+
+# --- SSE Connection Manager (Simple In-Memory) --- #
+class ConnectionManager:
+    def __init__(self):
+        # Dictionary to hold asyncio Queues for each user_id
+        self.active_connections: dict[int, asyncio.Queue] = {}
+        self.processing_counts: dict[int, int] = {}
+
+    async def connect(self, user_id: int) -> asyncio.Queue:
+        """Registers a new user connection and returns their queue."""
+        queue = asyncio.Queue()
+        self.active_connections[user_id] = queue
+        logger.info(f"SSE connection established for user {user_id}")
+        return queue
+
+    def disconnect(self, user_id: int):
+        """Removes a user's queue when they disconnect."""
+        if user_id in self.active_connections:
+            del self.active_connections[user_id]
+            logger.info(f"SSE connection closed for user {user_id}")
+
+    async def send_personal_message(
+        self, message: str, user_id: int, event: str = "message"
+    ):
+        """Sends a message to a specific user's queue."""
+        if user_id in self.active_connections:
+            json_data = json.dumps(message)
+            await self.active_connections[user_id].put(
+                {"event": event, "data": json_data}
+            )
+            logger.info(f"Sent SSE event '{event}' to user {user_id}")
+        else:
+            logger.warning(f"Attempted to send SSE to disconnected user {user_id}")
+
+    async def increment_processing_count(self, user_id: int):
+        if user_id in self.active_connections:
+            self.processing_counts[user_id] = self.processing_counts.get(user_id, 0) + 1
+            count = self.processing_counts[user_id]
+            await self.active_connections[user_id].put(
+                {
+                    "event": "processing_count_update",
+                    "data": json.dumps({"count": count}),
+                }
+            )
+            logger.info(f"Incremented processing count for user {user_id} to {count}")
+
+    async def decrement_processing_count(self, user_id: int):
+        if (
+            user_id in self.active_connections
+            and self.processing_counts.get(user_id, 0) > 0
+        ):
+            self.processing_counts[user_id] -= 1
+            count = self.processing_counts[user_id]
+            await self.active_connections[user_id].put(
+                {
+                    "event": "processing_count_update",
+                    "data": json.dumps({"count": count}),
+                }
+            )
+            logger.info(f"Decremented processing count for user {user_id} to {count}")
+        elif user_id in self.processing_counts and self.processing_counts[user_id] <= 0:
+            logger.info(f"Processing count for user {user_id} is already 0")
+
+
+manager = ConnectionManager()
 
 
 # --- Root Endpoint --- Serve index.html using FileResponse
@@ -349,72 +435,185 @@ async def parse_and_create_job_endpoint(
         logger.debug(f"Creating job entry for user {user_id}...")
         db_job = crud.create_job(db=db, job=job_data_to_create, user_id=user_id)
         logger.info(f"Successfully saved job '{db_job.title}' for user {user_id}.")
-        return db_job
+
+        # --- Send SSE event --- #
+        try:
+            # Serialize the created/updated job data for the frontend
+            # We need to manually convert the SQLAlchemy model to a dict/JSON compatible format
+            # Using the Pydantic schema ensures consistency
+            job_response_data = schemas.Job.model_validate(db_job)
+            job_json = job_response_data.model_dump_json()
+            await manager.send_personal_message(job_json, user_id, event="new_job")
+        except Exception as sse_error:
+            logger.error(f"Error sending SSE event for user {user_id}: {sse_error}")
+            # Don't fail the request if SSE fails, just log it
+
+        return job_response_data
 
     except Exception as e:
         logger.error(f"Error processing job for user {user_id}: {e}", exc_info=True)
-        # Consider more specific error handling (e.g., LLM failure vs. DB error)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save job: {str(e)}"
+        raise HTTPException(status_code=500, detail=f"Failed to save job: {str(e)}")
+
+
+# --- Endpoint to save job from Chrome Extension --- #
+async def process_job_in_background(
+    user_id: int, markdown_content: str, manager: ConnectionManager
+):
+    """
+    Processes job cleaning, saving, ranking, and notification in the background.
+    Manages its own database session and uses a semaphore for SQLite write safety.
+    """
+    job_id_for_logging = "N/A"
+    final_job_data_for_sse = None
+    try:
+        # --- LLM Call 1: Clean Markdown (Outside DB lock) ---
+        logger.debug(
+            f"BG Task: Calling LLM to clean job markdown for user {user_id}..."
+        )
+        cleaned_data = await llm_interaction.call_llm_to_clean_job_markdown(
+            markdown_content
+        )
+        logger.info(f"BG Task: LLM cleaning finished for user {user_id}.")
+
+        async with db_write_semaphore:  # <-- Acquire semaphore ONLY for DB writes
+            db: Session | None = None
+            try:
+                db = SessionLocal()
+
+                # --- Get User (Inside lock, before writes) ---
+                user = crud.get_user_by_id(db, user_id=user_id)
+                if user is None:
+                    logger.error(
+                        f"BG Task: User {user_id} not found. Aborting job processing."
+                    )
+                    # No need to decrement count here, outer finally handles it.
+                    return  # Exit early
+                # --- Create Job Entry (Inside DB lock) ---
+                logger.debug(f"BG Task: Creating job entry for user {user_id}...")
+                job_data_to_create = schemas.JobCreate(
+                    title=cleaned_data.title or "Unknown Title",
+                    company=cleaned_data.company or "Unknown Company",
+                    location=cleaned_data.location,
+                    description=cleaned_data.cleaned_markdown or markdown_content,
+                    url=cleaned_data.url,
+                    user_id=user.id,
+                    raw_markdown=markdown_content,
+                )
+                db_job = crud.create_job(db=db, job=job_data_to_create, user_id=user_id)
+                job_id_for_logging = db_job.id
+                logger.info(
+                    f"BG Task: Successfully created job '{db_job.title}' (ID: {db_job.id}) for user {user_id}."
+                )
+
+                # --- Rank Job (LLM Call + DB Update inside Lock) ---
+                logger.info(
+                    f"BG Task: Calling LLM to rank job '{db_job.title}' (ID: {db_job.id}) for user {user_id}."
+                )
+                score, explanation = await logic.rank_job_with_llm(
+                    db, db_job.id, user_id
+                )
+                if score is not None:
+                    logger.info(
+                        f"BG Task: Successfully ranked job '{db_job.title}' (ID: {db_job.id}). Score: {score}"
+                    )
+                else:
+                    logger.warning(
+                        f"BG Task: LLM Ranking failed or skipped for job {db_job.id}"
+                    )
+
+                # --- Commit Transaction (Inside Lock) ---
+                db.commit()
+                logger.info(f"BG Task: Committed transaction for job {db_job.id}.")
+
+                # Refresh db_job to get final state after commit (Inside Lock)
+                db.refresh(db_job)
+                # Prepare data for SSE *after* commit and refresh
+                final_job_data_for_sse = schemas.Job.model_validate(db_job)
+
+            except Exception as db_error:  # Catch errors within the lock separately
+                logger.error(
+                    f"BG Task: Error during DB operations for job (ID: {job_id_for_logging}) user {user_id}: {db_error}",
+                    exc_info=True,
+                )
+                # Send error notification via SSE (if manager available)
+                await manager.send_personal_message(
+                    {"error": str(db_error), "job_id": job_id_for_logging},
+                    user_id,
+                    event="processing_error",
+                )
+                logger.info(f"Sent SSE event 'processing_error' to user {user_id}")
+                final_job_data_for_sse = None  # Ensure we don't send success SSE
+            finally:
+                if db:  # Close session if created
+                    db.close()
+        # --- Semaphore released here ---
+        # --- Send SSE Notification (Outside DB lock) ---
+        if final_job_data_for_sse:
+            logger.info(
+                f"BG Task: Sending 'job_processed' event for job {final_job_data_for_sse.id} to user {user_id}"
+            )
+            await manager.send_personal_message(
+                final_job_data_for_sse.model_dump(), user_id, event="job_processed"
+            )
+
+    except Exception as e:
+        # Catch errors happening *outside* the DB lock (e.g., initial LLM call)
+        logger.error(
+            f"BG Task: General error processing job for user {user_id}: {e}",
+            exc_info=True,
+        )
+        await manager.send_personal_message(
+            {
+                "error": str(e),
+                "job_id": job_id_for_logging,
+            },  # job_id might still be N/A
+            user_id,
+            event="processing_error",
+        )
+        logger.info(f"Sent SSE event 'processing_error' to user {user_id}")
+
+    finally:
+        # Decrement count regardless of success/failure, inside/outside lock
+        await manager.decrement_processing_count(user_id)
+        logger.debug(
+            f"BG Task: Decremented processing count for user {user_id}. Job ID attempted: {job_id_for_logging}"
         )
 
 
 # --- Endpoint to save job from Chrome Extension --- #
-@app.post("/users/{user_id}/jobs/from_extension", response_model=schemas.Job, tags=["Jobs", "Extension"])
+@app.post(
+    "/users/{user_id}/jobs/from_extension",
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["Jobs", "Extension"],
+)
 async def save_job_from_extension(
     user_id: int,
-    request: schemas.JobMarkdownRequest,
-    db: Session = Depends(get_db),
+    markdown_request: schemas.JobMarkdownRequest,
+    background_tasks: BackgroundTasks,
+    # Removed db: Session = Depends(get_db)
 ):
-    """Receives raw job markdown from the Chrome extension, cleans it using LLM, and saves it as a new job."""
-    logger.info(f"Received job markdown from extension for user {user_id}.")
-    # Use the correct function to get user by ID
-    user = crud.get_user_by_id(db, user_id=user_id)
-    if user is None:
-        logger.error(f"User with ID {user_id} not found.")
-        raise HTTPException(status_code=404, detail="User not found")
+    """
+    Accepts job markdown from the extension, increments the processing count immediately,
+    schedules the full processing (cleaning, saving, ranking) in the background,
+    and returns an immediate 202 Accepted response.
+    """
+    logger.info(
+        f"Endpoint: Received job markdown request from extension for user {user_id}. Scheduling background processing."
+    )
 
-    try:
-        # Call the LLM cleaning function from the correct module
-        cleaned_data: schemas.CleanedJobDescription = await llm_interaction.call_llm_to_clean_job_markdown(
-            markdown_content=request.markdown_content
-        )
+    # Increment count immediately for faster UI feedback that the request was received
+    await manager.increment_processing_count(user_id)
 
-        # Create the JobCreate object using data from the cleaned LLM output
-        job_data = schemas.JobCreate(
-            title=cleaned_data.title or "Unknown Title",
-            company=cleaned_data.company or "Unknown Company",
-            location=cleaned_data.location or "Unknown Location",
-            url=cleaned_data.url or "",
-            description=cleaned_data.cleaned_markdown,
-            status="Bookmarked", # Default status for jobs from extension
-            notes="Added via Chrome Extension",
-            user_id=user_id # Ensure user_id is passed correctly
-        )
+    # Schedule the actual processing to run in the background
+    background_tasks.add_task(
+        process_job_in_background, user_id, markdown_request.markdown_content, manager
+    )
 
-        # Save the job using the correct CRUD function
-        db_job = crud.create_job(db=db, job=job_data, user_id=user_id)
-
-        # --- LLM Ranking (Moved after job creation) --- #
-        # Combine profile data and job description for ranking
-        logger.info(f"Calling LLM to rank job '{db_job.title}' for user {user_id}.")
-        score, explanation = await logic.rank_job_with_llm(
-            db=db, job_id=db_job.id, user_id=user_id
-        )
-        if score is None or explanation is None:
-            raise HTTPException(status_code=500, detail="Failed to rank job using LLM")
-
-        db.commit()
-
-        logger.info(f"Successfully ranked job '{db_job.title}' for user {user_id}.")
-        return db_job
-
-    except Exception as e:
-        logger.error(f"Error processing job from extension for user {user_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to save job from extension: {e}"
-        )
+    # Return an immediate response indicating acceptance
+    logger.info(f"Endpoint: Responding 202 Accepted for user {user_id} job submission.")
+    return {
+        "message": "Job submission received and is being processed in the background."
+    }
 
 
 # --- Job Ranking and Tailoring Endpoints ---
@@ -502,7 +701,9 @@ async def map_autofill_fields_poc(
 
 
 # --- New Endpoint ---
-@app.post("/users/{user_id}/jobs/tailor-suggestions", response_model=schemas.TailoringResponse)
+@app.post(
+    "/users/{user_id}/jobs/tailor-suggestions", response_model=schemas.TailoringResponse
+)
 async def get_tailoring_suggestions_endpoint(
     request_data: schemas.TailoringRequest,
     user_id: int = Path(..., title="The ID of the user to get suggestions for"),
@@ -527,6 +728,32 @@ async def get_tailoring_suggestions_endpoint(
         raise HTTPException(
             status_code=500, detail="Failed to generate tailoring suggestions."
         )
+
+
+# --- SSE Endpoint --- #
+@app.get("/stream-jobs/{user_id}")
+async def stream_jobs(request: Request, user_id: int):
+    """Endpoint for Server-Sent Events to stream new job updates."""
+    queue = await manager.connect(user_id)
+
+    async def event_generator():
+        try:
+            while True:
+                # Wait for a message in the queue
+                message_dict = await queue.get()
+                if await request.is_disconnected():
+                    logger.info(
+                        f"SSE client disconnected for user {user_id} before sending."
+                    )
+                    break
+                # Yield the event in SSE format
+                yield message_dict
+        except asyncio.CancelledError:
+            logger.info(f"SSE connection cancelled for user {user_id}")
+        finally:
+            manager.disconnect(user_id)
+
+    return EventSourceResponse(event_generator())
 
 
 # --- Dependency ---

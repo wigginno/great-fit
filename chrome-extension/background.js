@@ -27,11 +27,11 @@ chrome.action.onClicked.addListener(async (tab) => {
       );
       // Show user feedback for injection failure
       chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon48.png', // Optional: add an icon
-        title: 'Great Fit Saver',
-        message: 'Error: Could not inject script into the page.',
-        priority: 1
+        type: "basic",
+        iconUrl: "icons/icon48.png", // Optional: add an icon
+        title: "Great Fit Saver",
+        message: "Error: Could not inject script into the page.",
+        priority: 1,
       });
       return;
     }
@@ -46,14 +46,20 @@ chrome.action.onClicked.addListener(async (tab) => {
           : "[Not a string]",
       );
 
-      if (typeof markdownContent !== 'string' || markdownContent.startsWith("Error:")) {
-        console.error("Content script reported an error or returned invalid data:", markdownContent);
+      if (
+        typeof markdownContent !== "string" ||
+        markdownContent.startsWith("Error:")
+      ) {
+        console.error(
+          "Content script reported an error or returned invalid data:",
+          markdownContent,
+        );
         chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'icons/icon48.png',
-            title: 'Great Fit Saver',
-            message: 'Error: Could not extract job content from the page.',
-            priority: 1
+          type: "basic",
+          iconUrl: "icons/icon48.png",
+          title: "Great Fit Saver",
+          message: "Error: Could not extract job content from the page.",
+          priority: 1,
         });
         return;
       }
@@ -66,9 +72,9 @@ chrome.action.onClicked.addListener(async (tab) => {
 
       try {
         const response = await fetch(apiUrl, {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
             // Add any other headers like Authorization if needed in the future
           },
           body: JSON.stringify({ markdown_content: markdownContent }),
@@ -79,11 +85,11 @@ chrome.action.onClicked.addListener(async (tab) => {
           console.log("Backend API call successful:", responseData);
           // Show success notification
           chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'icons/icon48.png',
-            title: 'Great Fit Saver',
-            message: `Job "${responseData.title || 'Unknown'}" saved successfully!`, // Use title from response if available
-            priority: 0
+            type: "basic",
+            iconUrl: "icons/icon48.png",
+            title: "Great Fit Saver",
+            message: `Job "${responseData.title || "Unknown"}" saved successfully!`, // Use title from response if available
+            priority: 0,
           });
         } else {
           // Handle API errors (e.g., 4xx, 5xx)
@@ -92,51 +98,54 @@ chrome.action.onClicked.addListener(async (tab) => {
             const errorData = await response.json();
             errorDetail = errorData.detail || JSON.stringify(errorData);
           } catch (e) {
-             // Could not parse error JSON, use status text
-             errorDetail = response.statusText;
+            // Could not parse error JSON, use status text
+            errorDetail = response.statusText;
           }
-          console.error("Backend API call failed:", response.status, errorDetail);
+          console.error(
+            "Backend API call failed:",
+            response.status,
+            errorDetail,
+          );
           chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'icons/icon48.png',
-            title: 'Great Fit Saver Error',
+            type: "basic",
+            iconUrl: "icons/icon48.png",
+            title: "Great Fit Saver Error",
             message: `Failed to save job: ${errorDetail}`,
-            priority: 1
+            priority: 1,
           });
         }
       } catch (networkError) {
         // Handle network errors (e.g., server unreachable)
         console.error("Network error calling backend API:", networkError);
         chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icons/icon48.png',
-          title: 'Great Fit Saver Error',
+          type: "basic",
+          iconUrl: "icons/icon48.png",
+          title: "Great Fit Saver Error",
           message: `Network Error: Could not connect to the server. Is it running?`, // More specific message
-          priority: 1
+          priority: 1,
         });
       }
       // ---- END API Call ----
-
     } else {
       console.warn(
         "Script injection succeeded, but no markdown result returned.",
       );
       chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon48.png',
-        title: 'Great Fit Saver',
-        message: 'Could not find job content on the page.',
-        priority: 1
+        type: "basic",
+        iconUrl: "icons/icon48.png",
+        title: "Great Fit Saver",
+        message: "Could not find job content on the page.",
+        priority: 1,
       });
     }
   } catch (err) {
     console.error(`Failed to execute script or handle result: ${err}`, err);
     chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon48.png',
-        title: 'Great Fit Saver Error',
-        message: `An unexpected error occurred: ${err.message}`,
-        priority: 1
+      type: "basic",
+      iconUrl: "icons/icon48.png",
+      title: "Great Fit Saver Error",
+      message: `An unexpected error occurred: ${err.message}`,
+      priority: 1,
     });
   }
 });

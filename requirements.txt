@@ -20,3 +20,6 @@ pytest
 httpx
 pytest-asyncio
 pytest-env
+
+datetime
+sse-starlette

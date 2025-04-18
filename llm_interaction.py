@@ -1,21 +1,15 @@
 import os
 import re
-import json
 import logging
 from typing import Optional
-from openai import OpenAI
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
-import crud
-import models
-import schemas
 from schemas import (
     CleanedJobDescription,
     ResumeData,
-    FormFieldInfo,
     JobRanking,
-    Subsection,
-    Section,
+    TailoringSuggestions,
 )
 
 
@@ -39,7 +33,7 @@ APP_NAME = "Job Application Helper"
 APP_URL = "https://github.com/wigginno/job-app-helper"
 
 # --- Initialize OpenAI client to use OpenRouter ---
-client = OpenAI(
+client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
     default_headers={
@@ -102,16 +96,17 @@ PARSED_RESUME_OUTPUT_EXAMPLE = re.sub(
 ).replace("\n", "")
 
 
-# Removed inline Pydantic models for resume parsing (Subsection, Section, ResumeData)
-# These are now imported from schemas.py
-
-
 class CleanedJobDescription(BaseModel):
     title: str = Field(description="The official job title.")
     company: str = Field(description="The name of the hiring company.")
-    location: Optional[str] = Field(None, description="The job location (e.g., 'City, State' or 'Remote').")
+    location: Optional[str] = Field(
+        None, description="The job location (e.g., 'City, State' or 'Remote')."
+    )
     url: Optional[str] = Field(None, description="The original URL of the job posting.")
-    cleaned_text: str = Field(description="The full job description, cleaned and formatted for readability (e.g., using markdown for headers, bullets). Remove extraneous webpage elements like navigation links, ads, etc.")
+    cleaned_text: str = Field(
+        description="The full job description, cleaned and formatted for readability (e.g., using markdown for headers, bullets). Remove extraneous webpage elements like navigation links, ads, etc."
+    )
+
 
 class TailoringSuggestions(BaseModel):
     suggestions: list[str]
@@ -131,7 +126,7 @@ If the resume DOES NOT have a dedicated section for skills, infer the skills fro
         {"role": "user", "content": resume_text},
     ]
 
-    response = client.beta.chat.completions.parse(
+    response = await client.beta.chat.completions.parse(
         model=MODEL_NAME,
         messages=messages,
         response_format=ResumeData,
@@ -140,7 +135,9 @@ If the resume DOES NOT have a dedicated section for skills, infer the skills fro
     return resume_data
 
 
-async def call_llm_to_clean_job_markdown(markdown_content: str) -> CleanedJobDescription:
+async def call_llm_to_clean_job_markdown(
+    markdown_content: str,
+) -> CleanedJobDescription:
     """Uses LLM to clean raw markdown from a job posting webpage and extract key details."""
 
     system_prompt = f"""You are an expert job description cleaner and parser. You will receive raw text/markdown scraped from a job posting webpage. 
@@ -152,19 +149,22 @@ Your task is to:
 
 Schema:
 ```json
-{schemas.CleanedJobDescription.model_json_schema()}
+{CleanedJobDescription.model_json_schema()}
 ```
 """
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Here is the raw job posting markdown:\n\n{markdown_content}"},
+        {
+            "role": "user",
+            "content": f"Here is the raw job posting markdown:\n\n{markdown_content}",
+        },
     ]
 
-    response = client.beta.chat.completions.parse(
-        model=MODEL_NAME, 
+    response = await client.beta.chat.completions.parse(
+        model=MODEL_NAME,
         messages=messages,
-        response_format=schemas.CleanedJobDescription,
+        response_format=CleanedJobDescription,
     )
 
     cleaned_job_data = response.choices[0].message.parsed
@@ -198,10 +198,11 @@ async def call_llm_for_job_ranking(
         {"role": "user", "content": user_prompt},
     ]
 
-    response = client.beta.chat.completions.parse(
+    response = await client.beta.chat.completions.parse(
         model=MODEL_NAME,
         messages=messages,
         response_format=JobRanking,
+        temperature=0.0,
     )
     job_ranking = response.choices[0].message.parsed
     return job_ranking
@@ -225,7 +226,7 @@ Focus on incorporating keywords, highlighting relevant skills/experience, and us
         },
     ]
 
-    response = client.beta.chat.completions.parse(
+    response = await client.beta.chat.completions.parse(
         model=MODEL_NAME,
         messages=messages,
         response_format=TailoringSuggestions,

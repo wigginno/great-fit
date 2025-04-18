@@ -8,6 +8,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize the file upload functionality
   initializeFileUpload();
+
+  // Connect to SSE for real-time job updates (assuming user ID 1 for now)
+  connectToSSE(1);
 });
 
 // Set up all event listeners
@@ -349,6 +352,38 @@ async function loadJobs() {
 
     jobsHtml += "</div>";
     jobsContainer.innerHTML = jobsHtml;
+
+    // Add color-coding classes after rendering
+    jobsContainer.querySelectorAll(".job-card").forEach((card) => {
+      const jobId = card.getAttribute("data-job-id");
+      const job = jobs.find((j) => j.id == jobId); // Find the corresponding job data
+      if (job) {
+        const scoreElement = card.querySelector(".job-score");
+        if (
+          scoreElement &&
+          job.ranking_score !== null &&
+          job.ranking_score !== undefined
+        ) {
+          // Map score 0-10 to hue 0-120 (Red to Green)
+          const score = Math.max(0, Math.min(10, job.ranking_score)); // Clamp score between 0 and 10
+          const hue = (score / 10) * 120;
+          scoreElement.style.backgroundColor = `hsl(${hue}, 90%, 45%)`;
+          scoreElement.style.color = "white"; // Set text color for contrast
+          scoreElement.style.padding = "0.1rem 0.4rem"; // Add some padding
+          scoreElement.style.borderRadius = "0.25rem"; // Add rounded corners
+          scoreElement.style.display = "inline-block"; // Make it inline-block to fit content
+        } else if (
+          scoreElement &&
+          scoreElement.classList.contains("unranked")
+        ) {
+          scoreElement.style.backgroundColor = "#6c757d"; // Default grey for unranked
+          scoreElement.style.color = "white";
+          scoreElement.style.padding = "0.1rem 0.4rem";
+          scoreElement.style.borderRadius = "0.25rem";
+          scoreElement.style.display = "inline-block";
+        }
+      }
+    });
   } catch (error) {
     console.error("Error loading jobs:", error);
     document.getElementById("jobsList").innerHTML = `
@@ -362,63 +397,31 @@ async function loadJobs() {
 
 // Function to save job
 async function saveJob() {
-  const jobDescriptionTextarea = document.getElementById("jobDescription");
-  const saveJobButton = document.getElementById("saveJobButton");
-  const jobDescription = jobDescriptionTextarea.value.trim();
+  const jobDescriptionInput = document.getElementById("jobDescription");
+  const saveButton = document.getElementById("saveJobButton");
+  const savingIndicator = document.getElementById("savingIndicator");
+  const jobMarkdown = jobDescriptionInput.value.trim();
 
-  if (!jobDescription) {
+  if (!jobMarkdown) {
     alert("Please enter a job description before saving.");
     return;
   }
 
-  // Show loading state
-  const originalButtonText = saveJobButton.textContent;
-  saveJobButton.disabled = true;
-  saveJobButton.textContent = "Saving...";
+  // Show indicator and disable button
+  if (savingIndicator) savingIndicator.style.display = "block";
+  if (saveButton) saveButton.disabled = true;
 
-  // Optional: Add a spinner next to the text
-  const spinner = document.createElement("span");
-  spinner.className = "spinner";
-  spinner.style.display = "inline-block";
-  spinner.style.width = "16px";
-  spinner.style.height = "16px";
-  spinner.style.marginLeft = "8px";
-  spinner.style.border = "2px solid rgba(0, 0, 0, 0.1)";
-  spinner.style.borderTopColor = "#3498db";
-  spinner.style.borderRadius = "50%";
-  spinner.style.animation = "spin 1s linear infinite";
-  saveJobButton.appendChild(spinner);
-
-  // Add the keyframe animation if it doesn't exist
-  if (!document.getElementById("spinnerAnimation")) {
-    const styleSheet = document.createElement("style");
-    styleSheet.id = "spinnerAnimation";
-    styleSheet.textContent = `
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-            }
-        `;
-    document.head.appendChild(styleSheet);
-  }
+  // For now, hardcode user ID to 1
+  const userId = 1;
 
   try {
-    // For now, hardcode user ID to 1
-    const userId = 1;
-
-    // Inform user that LLM processing might take a moment
-    jobDescriptionTextarea.value = "Formatting job description with AI...";
-    jobDescriptionTextarea.disabled = true;
-
-    const response = await fetch(`/users/${userId}/jobs/`, {
+    const response = await fetch(`/users/${userId}/jobs/from_markdown`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        title: "New Job", // Will be updated by backend using LLM
-        company: "Unknown Company", // Will be updated by backend using LLM
-        description: jobDescription,
+        markdown: jobMarkdown,
       }),
     });
 
@@ -429,28 +432,15 @@ async function saveJob() {
       );
     }
 
-    // Reset and clear the textarea
-    jobDescriptionTextarea.value = "";
-    jobDescriptionTextarea.disabled = false;
-
-    // Reload jobs list to show new job
-    loadJobs();
-
-    // Optional: Show success message
-    alert("Job saved successfully!");
+    // No need to manually add the job here if SSE is working
+    // addJobCardToList(newJob);
   } catch (error) {
     console.error("Error saving job:", error);
-    alert(`Error saving job: ${error.message}`);
-    // Re-enable textarea on error
-    jobDescriptionTextarea.disabled = false;
-    jobDescriptionTextarea.value = jobDescription; // Restore original content
+    alert(`Failed to save job: ${error.message}`);
   } finally {
-    // Reset button state
-    saveJobButton.disabled = false;
-    saveJobButton.textContent = originalButtonText;
-    if (spinner && spinner.parentNode) {
-      spinner.parentNode.removeChild(spinner);
-    }
+    // Hide indicator and re-enable button regardless of success/failure
+    if (savingIndicator) savingIndicator.style.display = "none";
+    if (saveButton) saveButton.disabled = false;
   }
 }
 
@@ -836,20 +826,19 @@ async function showJobDetails(jobId, userId) {
     }
 
     if (job.ranking_score) {
-      // Define color based on score
-      let scoreColorClass = "text-danger";
-      if (job.ranking_score >= 7) scoreColorClass = "text-success";
-      else if (job.ranking_score >= 5) scoreColorClass = "text-warning";
-
+      // Map score 0-10 to hue 0-120 (Red to Green)
+      const score = Math.max(0, Math.min(10, job.ranking_score)); // Clamp score between 0 and 10
+      const hue = (score / 10) * 120;
       jobDetailsHTML += `
                 <div class="card border-0 mb-3">
                     <div class="card-header bg-light">
                         <i class="bi bi-graph-up me-2"></i>Match Analysis
                     </div>
                     <div class="card-body">
-                        <h5 class="${scoreColorClass} mb-3">
+                        <h5 class="mb-3">
                             <i class="bi bi-star-fill me-2"></i>
-                            Score: ${job.ranking_score}/10
+                            Score: ${job.ranking_score.toFixed(1)}/10
+                            <span style="background-color: hsl(${hue}, 90%, 45%); color: white; padding: 0.1rem 0.4rem; border-radius: 0.25rem; display: inline-block;">${job.ranking_score.toFixed(1)}/10</span>
                         </h5>
                         <div class="alert alert-light">
                             ${job.ranking_explanation || "No explanation provided."}
@@ -913,4 +902,140 @@ async function rankJob(jobId, userId) {
       rankButton.innerHTML = '<i class="bi bi-calculator me-1"></i>Rank Job';
     }
   }
+}
+
+// --- SSE Connection --- //
+function connectToSSE(userId) {
+  console.log(`Connecting to SSE for user ${userId}...`);
+  const eventSource = new EventSource(`/stream-jobs/${userId}`);
+  const savingIndicator = document.getElementById("savingIndicator");
+  let savingStartTime = null; // Variable to store the start time
+  const MIN_INDICATOR_TIME_MS = 1000; // Minimum time to show indicator (1 second)
+
+  eventSource.onmessage = function (event) {
+    // Generic message handler (can be used for heartbeat or general info)
+    console.log("SSE message received:", event.data);
+  };
+
+  eventSource.addEventListener("processing_count_update", function (event) {
+    console.log("SSE processing_count_update received:", event.data);
+    try {
+      const data = JSON.parse(event.data);
+      const count = data.count;
+      console.log(`Current processing count: ${count}`);
+
+      if (count > 0) {
+        savingIndicator.textContent = `Processing ${count} job${count > 1 ? "s" : ""}...`;
+        savingIndicator.style.display = "block";
+      } else {
+        // Optionally add a small delay before hiding for better UX
+        setTimeout(() => {
+          savingIndicator.style.display = "none";
+        }, 500); // 500ms delay
+      }
+    } catch (error) {
+      console.error("Error parsing processing_count_update data:", error);
+      savingIndicator.style.display = "none"; // Hide indicator on error
+    }
+  });
+
+  eventSource.addEventListener("job_processed", function (event) {
+    console.log("SSE job_processed received:", event.data);
+    try {
+      const jobData = JSON.parse(event.data);
+      // Add the newly processed job to the top of the list
+      addJobCardToList(jobData, true); // Pass true to prepend
+    } catch (error) {
+      console.error(
+        "Error parsing or adding job from job_processed event:",
+        error,
+      );
+    }
+  });
+
+  eventSource.onerror = function (error) {
+    console.error("SSE Error:", error);
+    // Optionally attempt to reconnect or notify the user
+    eventSource.close(); // Close the connection on error
+    // Consider implementing a reconnect strategy here if needed
+    // setTimeout(() => connectToSSE(userId), 5000); // Example reconnect after 5s
+  };
+}
+
+// --- Helper to add job card to the list --- //
+function addJobCardToList(job, prepend = false) {
+  const jobsListContainer = document.getElementById("jobsList");
+  if (!jobsListContainer) {
+    console.error("Job list container not found!");
+    return;
+  }
+
+  // Find the inner .jobs-list div, or create if it doesn't exist (e.g., if list was empty)
+  let jobsListDiv = jobsListContainer.querySelector(".jobs-list");
+  if (!jobsListDiv) {
+    // If the placeholder was there, remove it
+    const placeholder = jobsListContainer.querySelector(".placeholder");
+    if (placeholder) placeholder.remove();
+
+    // Create the main container div
+    jobsListDiv = document.createElement("div");
+    jobsListDiv.className = "jobs-list";
+    jobsListContainer.appendChild(jobsListDiv);
+  }
+
+  // Create the new job card element
+  const newCard = document.createElement("div");
+  newCard.className = "job-card";
+  newCard.setAttribute("data-job-id", job.id);
+  // Add click listener directly here if needed, or rely on the parent listener setup in setupEventListeners
+  newCard.style.cursor = "pointer"; // Keep cursor pointer for consistency
+
+  // Set inner HTML based on loadJobs structure
+  newCard.innerHTML = `
+      <div class="job-title">${job.title || "Untitled Job"}</div>
+      <div class="job-company">${job.company || "Unknown Company"}</div>
+      ${
+        job.ranking_score !== null && job.ranking_score !== undefined
+          ? `<div class="job-score">Match: ${job.ranking_score.toFixed(1)}/10</div>`
+          : '<div class="job-score unranked">Not ranked</div>'
+      }
+  `;
+
+  // Prepend or append the card to the list
+  if (prepend) {
+    jobsListDiv.prepend(newCard);
+  } else {
+    jobsListDiv.appendChild(newCard);
+  }
+
+  // Apply dynamic background color to the score element
+  const scoreElement = newCard.querySelector(".job-score");
+  if (
+    scoreElement &&
+    job.ranking_score !== null &&
+    job.ranking_score !== undefined
+  ) {
+    // Map score 0-10 to hue 0-120 (Red to Green)
+    const score = Math.max(0, Math.min(10, job.ranking_score)); // Clamp score between 0 and 10
+    const hue = (score / 10) * 120;
+    scoreElement.style.backgroundColor = `hsl(${hue}, 90%, 45%)`;
+    scoreElement.style.color = "white"; // Set text color for contrast
+    scoreElement.style.padding = "0.1rem 0.4rem"; // Add some padding
+    scoreElement.style.borderRadius = "0.25rem"; // Add rounded corners
+    scoreElement.style.display = "inline-block"; // Make it inline-block to fit content
+  } else if (scoreElement && scoreElement.classList.contains("unranked")) {
+    scoreElement.style.backgroundColor = "#6c757d"; // Default grey for unranked
+    scoreElement.style.color = "white";
+    scoreElement.style.padding = "0.1rem 0.4rem";
+    scoreElement.style.borderRadius = "0.25rem";
+    scoreElement.style.display = "inline-block";
+  }
+
+  console.log(`Added new job row for ID: ${job.id}`);
+
+  // Optional: Add a temporary highlight effect
+  newCard.classList.add("new-job-highlight");
+  setTimeout(() => {
+    newCard.classList.remove("new-job-highlight");
+  }, 3000); // Highlight for 3 seconds
 }

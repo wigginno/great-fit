@@ -550,3 +550,63 @@ pre {
     margin-top: 8px;
     font-style: italic;
 }
+
+/* Job Card Styles */
+.job-card {
+    border: 1px solid #ddd;
+    padding: 15px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    background-color: #fff;
+    transition: background-color 0.3s ease;
+    cursor: pointer;
+}
+
+/* Add score-based background colors */
+.job-card.score-high {
+    background-color: #e6ffed; /* Light green */
+    border-left: 5px solid #4CAF50; /* Green border */
+}
+
+.job-card.score-medium {
+    background-color: #fff9e6; /* Light yellow */
+    border-left: 5px solid #ffc107; /* Yellow border */
+}
+
+.job-card.score-low {
+    background-color: #ffebee; /* Light red */
+    border-left: 5px solid #f44336; /* Red border */
+}
+
+.job-card.score-unranked {
+    /* Keep default or add specific style */
+    border-left: 5px solid #9e9e9e; /* Grey border */
+}
+
+.job-card:hover {
+    background-color: #f5f5f5;
+}
+
+/* Saving Indicator Style */
+#savingIndicator {
+    display: none; /* Hidden by default */
+    padding: 10px;
+    margin-bottom: 15px;
+    background-color: #e7f3fe; /* Light blue background */
+    border: 1px solid #c3d9ec;
+    border-radius: 4px;
+    color: #0c5460;
+    text-align: center;
+}
+
+#savingIndicator .spinner-border {
+    width: 1rem;
+    height: 1rem;
+    vertical-align: text-bottom;
+    margin-right: 5px;
+}
+
+.placeholder {
+    color: #6c757d;
+    font-style: italic;
+}
