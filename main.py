@@ -329,7 +329,7 @@ async def create_job_endpoint(
     formatted_job_data = await logic.format_job_details_with_llm(job.description)
 
     # Update the job description with formatted content
-    enhanced_job = schemas.JobCreate(
+    job = schemas.JobCreate(
         title=formatted_job_data.get("title", job.title) or job.title,
         company=formatted_job_data.get("company", job.company) or job.company,
         description=json.dumps(
@@ -337,10 +337,8 @@ async def create_job_endpoint(
         ),  # Store the full formatted data as JSON
     )
 
-    # Create the job with enhanced data
-    created_job = crud.create_job(db=db, job=enhanced_job, user_id=user_id)
+    created_job = crud.create_job(db=db, job=job, user_id=user_id)
 
-    # Return response as JSONResponse to avoid validation issues
     return JSONResponse(
         content={
             "id": created_job.id,
@@ -373,7 +371,6 @@ def get_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
             status_code=404, detail=f"Job with id {job_id} not found for user {user_id}"
         )
 
-    # Return as JSONResponse for consistency with other endpoints
     return JSONResponse(
         content={
             "id": job.id,
@@ -381,7 +378,6 @@ def get_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
             "company": job.company,
             "description": job.description,
             "user_id": job.user_id,
-            # Include any additional fields that might be in the response model
             "ranking_score": getattr(job, "ranking_score", None),
             "ranking_explanation": getattr(job, "ranking_explanation", None),
         }
@@ -393,7 +389,6 @@ def delete_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)
     """
     Delete a specific job by ID for a user
     """
-    # For demo purposes, only allow user 1 to delete jobs
     if user_id != 1:
         raise HTTPException(
             status_code=403, detail="Operation not permitted for this user"
@@ -408,53 +403,6 @@ def delete_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)
         )
 
     return {"message": "Job deleted successfully"}
-
-
-# --- New Job Parsing/Saving Endpoint ---
-@app.post("/jobs/parse-and-save/", response_model=schemas.Job, tags=["Jobs"])
-async def parse_and_create_job_endpoint(
-    job_input: schemas.JobDescriptionInput,  # Expect raw description
-    user_id: int = 1,  # Hardcoded user ID for PoC
-    db: Session = Depends(get_db),
-):
-    """POC endpoint to parse job description and save it as a new job."""
-    logger.info(f"Received job description for user {user_id}.")
-
-    try:
-        # 1. Extract title and company using LLM
-        logger.debug("Calling LLM to extract job info...")
-        extracted_info = await logic.extract_job_info_with_llm(job_input.description)
-
-        # 2. Prepare data for CRUD operation
-        job_data_to_create = schemas.JobCreate(
-            title=extracted_info.title,  # Use extracted title
-            company=extracted_info.company,  # Use extracted company
-            description=job_input.description,  # Use original full text
-            # user_id is handled by crud.create_job
-        )
-
-        # 3. Create job in the database
-        logger.debug(f"Creating job entry for user {user_id}...")
-        db_job = crud.create_job(db=db, job=job_data_to_create, user_id=user_id)
-        logger.info(f"Successfully saved job '{db_job.title}' for user {user_id}.")
-
-        # --- Send SSE event --- #
-        try:
-            # Serialize the created/updated job data for the frontend
-            # We need to manually convert the SQLAlchemy model to a dict/JSON compatible format
-            # Using the Pydantic schema ensures consistency
-            job_response_data = schemas.Job.model_validate(db_job)
-            job_json = job_response_data.model_dump_json()
-            await manager.send_personal_message(job_json, user_id, event="new_job")
-        except Exception as sse_error:
-            logger.error(f"Error sending SSE event for user {user_id}: {sse_error}")
-            # Don't fail the request if SSE fails, just log it
-
-        return job_response_data
-
-    except Exception as e:
-        logger.error(f"Error processing job for user {user_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to save job: {str(e)}")
 
 
 # --- Endpoint to save job from Chrome Extension --- #
@@ -592,7 +540,6 @@ async def save_job_from_extension(
     user_id: int,
     markdown_request: schemas.JobMarkdownRequest,
     background_tasks: BackgroundTasks,
-    # Removed db: Session = Depends(get_db)
 ):
     """
     Accepts job markdown from the extension, increments the processing count immediately,
@@ -645,35 +592,6 @@ async def rank_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get
     return {"score": score, "explanation": explanation}
 
 
-# --- Autofill Mapping Endpoint ---
-@app.post("/autofill/map_poc", response_model=Dict[str, str], tags=["Autofill"])
-async def map_autofill_fields_poc(
-    form_fields: List[schemas.FormFieldInfo],
-    user_id: int = 1,
-    db: Session = Depends(get_db),
-):
-    """POC endpoint to map user profile data to given form fields using LLM.
-
-    First checks if the user profile exists before attempting to use LLM.
-    """
-    profile_json_str = crud.get_user_profile(db=db, user_id=user_id)
-    if profile_json_str is None:
-        raise HTTPException(
-            status_code=404, detail=f"Profile not found for user {user_id}"
-        )
-
-    try:
-        mapping = await logic.map_form_fields_with_llm(
-            db=db, user_id=user_id, form_fields=form_fields
-        )
-        return mapping
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to map autofill fields: {e}"
-        )
-
-
-# --- New Endpoint ---
 @app.post(
     "/users/{user_id}/jobs/tailor-suggestions", response_model=schemas.TailoringResponse
 )
