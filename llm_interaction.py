@@ -29,8 +29,8 @@ if not OPENROUTER_API_KEY:
     )
 
 # --- Application Info for OpenRouter ---
-APP_NAME = "Job Application Helper"
-APP_URL = "https://github.com/wigginno/job-app-helper"
+APP_NAME = "Great Fit"
+APP_URL = "https://github.com/wigginno/great-fit"
 
 # --- Initialize OpenAI client to use OpenRouter ---
 client = AsyncOpenAI(
@@ -44,10 +44,10 @@ client = AsyncOpenAI(
 
 # --- Model Configuration ---
 MODEL_CONFIG = {
-    "resume_parse": {"model": "openai/gpt-4.1-mini",  "temperature": 0.0, "top_p": 1, "max_tokens": 4096},
-    "jd_clean":     {"model": "openai/gpt-4.1-mini",  "temperature": 0.0, "top_p": 1, "max_tokens": 8192},
-    "job_rank":     {"model": "gpt-4.1-2025-04-14",       "temperature": 0.2, "top_p": 0.8, "max_tokens": 2048},
-    "resume_tailor":{"model": "gpt-4.1-2025-04-14",       "temperature": 0.2, "top_p": 0.8, "max_tokens": 1536},
+    "resume_parse":  {"model": "openai/gpt-4.1-mini",  "temperature": 0.0, "top_p": 1, "max_tokens": 4096},
+    "jd_clean":      {"model": "openai/gpt-4.1-mini",  "temperature": 0.0, "top_p": 1, "max_tokens": 8192},
+    "job_rank":      {"model": "openai/gpt-4.1",       "temperature": 0.2, "top_p": 0.8, "max_tokens": 2048},
+    "resume_tailor": {"model": "openai/o4-mini-high", "max_tokens": 8192},
 }
 COMMON_OPTS = {"seed": 123}
 
@@ -128,27 +128,14 @@ If the resume DOES NOT have a dedicated section for skills, infer the skills fro
         {"role": "user", "content": resume_text},
     ]
 
-    print("\n" + "-" * 80)
-    print("--- Function: call_llm_for_resume_parsing ---")
-    print(f"config: {MODEL_CONFIG['resume_parse']}")
-    print("-" * 80)
-    print(f"messages: {messages}")
-    print("-" * 80 + "\n")
-
     config = MODEL_CONFIG["resume_parse"]
     response = await client.beta.chat.completions.parse(
-        model=config["model"],
         messages=messages,
         response_format=ResumeData,
-        temperature=config["temperature"],
-        top_p=config["top_p"],
-        max_tokens=config["max_tokens"],
+        **config,
+        **COMMON_OPTS,
     )
     parsed = response.choices[0].message.parsed
-
-    print("\n" + "-" * 80)
-    print(f"parsed: {parsed}")
-    print("-" * 80 + "\n")
 
     return parsed
 
@@ -180,26 +167,15 @@ Schema:
     ]
 
     config = MODEL_CONFIG["jd_clean"]
-    print("\n" + "-" * 80)
-    print(f"config: {config}")
-    print("-" * 80 + "\n")
-    print(f"messages: {messages}")
-    print("-" * 80 + "\n")
 
     response = await client.beta.chat.completions.parse(
-        model=config["model"],
         messages=messages,
         response_format=CleanedJobDescription,
-        temperature=config["temperature"],
-        top_p=config["top_p"],
-        max_tokens=config["max_tokens"],
+        **config,
+        **COMMON_OPTS,
     )
 
     cleaned_job_data = response.choices[0].message.parsed
-
-    print("\n" + "-" * 80)
-    print(f"cleaned_job_data: {cleaned_job_data}")
-    print("-" * 80 + "\n")
 
     return cleaned_job_data
 
@@ -230,25 +206,14 @@ async def call_llm_for_job_ranking(
     ]
 
     config = MODEL_CONFIG["job_rank"]
-    print("\n" + "-" * 80)
-    print(f"config: {config}")
-    print("-" * 80 + "\n")
-    print(f"messages: {messages}")
-    print("-" * 80 + "\n")
 
     response = await client.beta.chat.completions.parse(
-        model=config["model"],
         messages=messages,
         response_format=JobRanking,
-        temperature=config["temperature"],
-        top_p=config["top_p"],
-        max_tokens=config["max_tokens"],
+        **config,
+        **COMMON_OPTS,
     )
     job_ranking = response.choices[0].message.parsed
-
-    print("\n" + "-" * 80)
-    print(f"job_ranking: {job_ranking}")
-    print("-" * 80 + "\n")
 
     return job_ranking
 
@@ -274,24 +239,13 @@ Return the output as a JSON object following the TailoringResponse schema, speci
     ]
 
     config = MODEL_CONFIG["resume_tailor"]
-    print("\n" + "-" * 80)
-    print(f"config: {config}")
-    print("-" * 80 + "\n")
-    print(f"messages: {messages}")
-    print("-" * 80 + "\n")
 
     response = await client.beta.chat.completions.parse(
-        model=config["model"],
         messages=messages,
         response_format=TailoringResponse,
-        temperature=config["temperature"],
-        top_p=config["top_p"],
-        max_tokens=config["max_tokens"],
+        **config,
+        **COMMON_OPTS,
     )
     tailoring_suggestions = response.choices[0].message.parsed
-
-    print("\n" + "-" * 80)
-    print(f"tailoring_suggestions: {tailoring_suggestions}")
-    print("-" * 80 + "\n")
 
     return tailoring_suggestions

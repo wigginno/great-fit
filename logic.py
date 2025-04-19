@@ -103,32 +103,13 @@ async def rank_job_with_llm(db: Session, job_id: int, user_id: int):
         return None, None
 
     profile_json_string = crud.get_user_profile(db, user_id=user_id)
-    if not profile_json_string:
-        logger.warning(
-            f"User profile not found for user {user_id}. Ranking based on job only."
-        )
-        profile_snippet = "User profile not available."
-    else:
-        try:
-            profile_data = json.loads(profile_json_string)
-            profile_snippet = json.dumps(
-                {
-                    "skills": profile_data.get("skills", [])[:5],
-                }
-            )
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse profile JSON for user {user_id}")
-            profile_snippet = "Error parsing profile."
-        except Exception as e:
-            logger.error(f"Error processing profile for user {user_id}: {e}")
-            profile_snippet = "Error processing profile."
 
     job_description_text = db_job.description
 
     try:
         # Use the new structured job ranking function
         result = await call_llm_for_job_ranking_cached(
-            job_description_text, profile_snippet
+            job_description_text, profile_json_string
         )
 
         # Extract score and explanation from the structured result

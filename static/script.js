@@ -49,6 +49,29 @@ function setupEventListeners() {
   if (tailorButton) {
     tailorButton.addEventListener("click", getTailoringSuggestions);
   }
+
+  // Reset profile button
+  const resetProfileButton = document.getElementById("resetProfileButton");
+  if (resetProfileButton) {
+    resetProfileButton.addEventListener("click", resetProfile);
+  }
+
+  // Event delegation for profile controls (Expand/Collapse All)
+  const userProfileContainer = document.getElementById("userProfile");
+  if (userProfileContainer) {
+    userProfileContainer.addEventListener("click", function(event) {
+      const expandButton = event.target.closest('#expandAllProfile');
+      const collapseButton = event.target.closest('#collapseAllProfile');
+
+      if (expandButton) {
+        event.preventDefault(); // Prevent default link behavior (#)
+        expandAllProfileSections();
+      } else if (collapseButton) {
+        event.preventDefault(); // Prevent default link behavior (#)
+        collapseAllProfileSections();
+      }
+    });
+  }
 }
 
 // Initialize custom file upload functionality
@@ -264,6 +287,9 @@ async function loadProfile() {
     // For now, hardcode user ID to 1
     const userId = 1;
     const profileContainer = document.getElementById("userProfile");
+    const resumeUploadContainer = document.getElementById("resumeUploadContainer");
+    const resetProfileContainer = document.getElementById("resetProfileContainer");
+
     profileContainer.innerHTML = "Loading profile...";
 
     const response = await fetch(`/users/${userId}/profile`);
@@ -284,6 +310,9 @@ async function loadProfile() {
                         <p>You can add your resume using the upload form above.</p>
                     </div>
                 `;
+        // Show upload container, hide reset button
+        if (resumeUploadContainer) resumeUploadContainer.style.display = "block";
+        if (resetProfileContainer) resetProfileContainer.style.display = "none";
         return;
       }
     }
@@ -298,6 +327,10 @@ async function loadProfile() {
     // Use the formatProfileData function from profileFormatter.js to format the profile
     const formattedProfile = formatProfileData(profile.profile_data);
     profileContainer.innerHTML = formattedProfile;
+
+    // Hide upload container, show reset button
+    if (resumeUploadContainer) resumeUploadContainer.style.display = "none";
+    if (resetProfileContainer) resetProfileContainer.style.display = "block";
   } catch (error) {
     console.error("Error loading profile:", error);
     document.getElementById("userProfile").innerHTML = `
@@ -306,7 +339,33 @@ async function loadProfile() {
                 <p>${error.message}</p>
             </div>
         `;
+    // Show upload container, hide reset button on error
+    const resumeUploadContainer = document.getElementById("resumeUploadContainer");
+    const resetProfileContainer = document.getElementById("resetProfileContainer");
+    if (resumeUploadContainer) resumeUploadContainer.style.display = "block";
+    if (resetProfileContainer) resetProfileContainer.style.display = "none";
   }
+}
+
+// Function to reset the profile section to allow re-upload
+function resetProfile() {
+  console.log("Resetting profile UI...");
+  const userProfileDiv = document.getElementById("userProfile");
+  const resumeUploadContainer = document.getElementById("resumeUploadContainer");
+  const resetProfileContainer = document.getElementById("resetProfileContainer");
+
+  // Hide the reset button and profile content
+  if (resetProfileContainer) resetProfileContainer.style.display = "none";
+  if (userProfileDiv) userProfileDiv.innerHTML = '<p class="placeholder">Upload your resume to get started.</p>';
+
+  // Show the upload container
+  if (resumeUploadContainer) resumeUploadContainer.style.display = "block";
+
+  // Reset the file input area
+  resetFileUpload();
+
+  // Optional: Add a call here to delete the profile on the backend if desired
+  // fetch('/users/1/profile', { method: 'DELETE' }).then(...);
 }
 
 // Function to load and display jobs
@@ -1026,4 +1085,32 @@ function addJobCardToList(job, prepend = false) {
   setTimeout(() => {
     newCard.classList.remove("new-job-highlight");
   }, 3000); // Highlight for 3 seconds
+}
+
+// --- Expand/Collapse All Profile Sections ---
+
+function expandAllProfileSections() {
+  const profileContainer = document.getElementById('userProfile');
+  if (!profileContainer) return;
+
+  const collapsibleElements = profileContainer.querySelectorAll('.collapse');
+  collapsibleElements.forEach(element => {
+    const collapseInstance = bootstrap.Collapse.getOrCreateInstance(element, {
+      toggle: false // Prevent toggling state on instantiation
+    });
+    collapseInstance.show();
+  });
+}
+
+function collapseAllProfileSections() {
+  const profileContainer = document.getElementById('userProfile');
+  if (!profileContainer) return;
+
+  const collapsibleElements = profileContainer.querySelectorAll('.collapse');
+  collapsibleElements.forEach(element => {
+    const collapseInstance = bootstrap.Collapse.getOrCreateInstance(element, {
+      toggle: false // Prevent toggling state on instantiation
+    });
+    collapseInstance.hide();
+  });
 }
