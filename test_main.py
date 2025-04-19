@@ -149,37 +149,6 @@ def test_rank_job_parse_failure(
     assert db_job.ranking_explanation is None
 
 
-def test_suggest_tailoring_success(test_client: TestClient, monkeypatch):
-    mock_suggestions = "Suggestion 1\nSuggestion 2"
-
-    async def mock_call_llm(*args, **kwargs):
-        return mock_suggestions
-
-    monkeypatch.setattr(logic, "call_llm", mock_call_llm)
-    request_data = {
-        "job_description": "Job desc...",
-        "profile_snippet": "Profile snippet...",
-    }
-    response = test_client.post("/resume/suggest_tailoring", json=request_data)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["suggestions"] == mock_suggestions
-
-
-def test_suggest_tailoring_llm_failure(test_client: TestClient, monkeypatch):
-    async def mock_call_llm(*args, **kwargs):
-        return None
-
-    monkeypatch.setattr(logic, "call_llm", mock_call_llm)
-    request_data = {
-        "job_description": "Job desc...",
-        "profile_snippet": "Profile snippet...",
-    }
-    response = test_client.post("/resume/suggest_tailoring", json=request_data)
-    assert response.status_code == 500
-    assert "Failed to generate resume tailoring suggestions" in response.text
-
-
 def test_autofill_map_success(
     test_client: TestClient, setup_data_fixture, db_session, monkeypatch
 ):

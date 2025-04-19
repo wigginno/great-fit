@@ -6,10 +6,10 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from schemas import (
-    CleanedJobDescription,
     ResumeData,
     JobRanking,
-    TailoringSuggestions,
+    CleanedJobDescription,
+    TailoringResponse,
 )
 
 
@@ -43,7 +43,13 @@ client = AsyncOpenAI(
 )
 
 # --- Model Configuration ---
-MODEL_NAME = "gpt-4.1-2025-04-14"
+MODEL_CONFIG = {
+    "resume_parse": {"model": "openai/gpt-4.1-mini",  "temperature": 0.0, "top_p": 1, "max_tokens": 4096},
+    "jd_clean":     {"model": "openai/gpt-4.1-mini",  "temperature": 0.0, "top_p": 1, "max_tokens": 8192},
+    "job_rank":     {"model": "gpt-4.1-2025-04-14",       "temperature": 0.2, "top_p": 0.8, "max_tokens": 2048},
+    "resume_tailor":{"model": "gpt-4.1-2025-04-14",       "temperature": 0.2, "top_p": 0.8, "max_tokens": 1536},
+}
+COMMON_OPTS = {"seed": 123}
 
 # --- Structured Output Examples ---
 PARSED_RESUME_OUTPUT_EXAMPLE = """{
@@ -103,13 +109,9 @@ class CleanedJobDescription(BaseModel):
         None, description="The job location (e.g., 'City, State' or 'Remote')."
     )
     url: Optional[str] = Field(None, description="The original URL of the job posting.")
-    cleaned_text: str = Field(
+    cleaned_markdown: str = Field(
         description="The full job description, cleaned and formatted for readability (e.g., using markdown for headers, bullets). Remove extraneous webpage elements like navigation links, ads, etc."
     )
-
-
-class TailoringSuggestions(BaseModel):
-    suggestions: list[str]
 
 
 async def call_llm_for_resume_parsing(resume_text: str) -> ResumeData:
@@ -126,13 +128,29 @@ If the resume DOES NOT have a dedicated section for skills, infer the skills fro
         {"role": "user", "content": resume_text},
     ]
 
+    print("\n" + "-" * 80)
+    print("--- Function: call_llm_for_resume_parsing ---")
+    print(f"config: {MODEL_CONFIG['resume_parse']}")
+    print("-" * 80)
+    print(f"messages: {messages}")
+    print("-" * 80 + "\n")
+
+    config = MODEL_CONFIG["resume_parse"]
     response = await client.beta.chat.completions.parse(
-        model=MODEL_NAME,
+        model=config["model"],
         messages=messages,
         response_format=ResumeData,
+        temperature=config["temperature"],
+        top_p=config["top_p"],
+        max_tokens=config["max_tokens"],
     )
-    resume_data = response.choices[0].message.parsed
-    return resume_data
+    parsed = response.choices[0].message.parsed
+
+    print("\n" + "-" * 80)
+    print(f"parsed: {parsed}")
+    print("-" * 80 + "\n")
+
+    return parsed
 
 
 async def call_llm_to_clean_job_markdown(
@@ -161,13 +179,28 @@ Schema:
         },
     ]
 
+    config = MODEL_CONFIG["jd_clean"]
+    print("\n" + "-" * 80)
+    print(f"config: {config}")
+    print("-" * 80 + "\n")
+    print(f"messages: {messages}")
+    print("-" * 80 + "\n")
+
     response = await client.beta.chat.completions.parse(
-        model=MODEL_NAME,
+        model=config["model"],
         messages=messages,
         response_format=CleanedJobDescription,
+        temperature=config["temperature"],
+        top_p=config["top_p"],
+        max_tokens=config["max_tokens"],
     )
 
     cleaned_job_data = response.choices[0].message.parsed
+
+    print("\n" + "-" * 80)
+    print(f"cleaned_job_data: {cleaned_job_data}")
+    print("-" * 80 + "\n")
+
     return cleaned_job_data
 
 
@@ -189,8 +222,6 @@ async def call_llm_for_job_ranking(
 
     # Applicant Profile
     {applicant_profile}
-
-    Format your response as a JSON object with 'score' (a float between 0.0 and 10.0) and 'explanation' (a string).
     """
 
     messages = [
@@ -198,26 +229,42 @@ async def call_llm_for_job_ranking(
         {"role": "user", "content": user_prompt},
     ]
 
+    config = MODEL_CONFIG["job_rank"]
+    print("\n" + "-" * 80)
+    print(f"config: {config}")
+    print("-" * 80 + "\n")
+    print(f"messages: {messages}")
+    print("-" * 80 + "\n")
+
     response = await client.beta.chat.completions.parse(
-        model=MODEL_NAME,
+        model=config["model"],
         messages=messages,
         response_format=JobRanking,
-        temperature=0.0,
+        temperature=config["temperature"],
+        top_p=config["top_p"],
+        max_tokens=config["max_tokens"],
     )
     job_ranking = response.choices[0].message.parsed
+
+    print("\n" + "-" * 80)
+    print(f"job_ranking: {job_ranking}")
+    print("-" * 80 + "\n")
+
     return job_ranking
 
 
 async def call_llm_for_resume_tailoring(
     job_description: str, applicant_profile: str
-) -> TailoringSuggestions:
+) -> TailoringResponse:
     """Call LLM for resume tailoring."""
 
-    system_prompt = """You are a resume tailoring assistant. Your task is to generate tailored content for a job application based on the provided job description and applicant profile.
+    system_prompt = f"""You are a resume tailoring assistant. Your task is to generate tailored content for a job application based on the provided job description and applicant profile.
 Consider the applicant's qualifications and experiences in relation to the job description/requirements.
 Provide a list of 3-5 specific, actionable suggestions on how to tailor the profile snippet to better match the job description.
 Focus on incorporating keywords, highlighting relevant skills/experience, and using quantifiable achievements where possible.
+Return the output as a JSON object following the TailoringResponse schema, specifically populating the 'suggestions' field with a JSON list of strings.
 """
+
     messages = [
         {"role": "system", "content": system_prompt},
         {
@@ -226,10 +273,25 @@ Focus on incorporating keywords, highlighting relevant skills/experience, and us
         },
     ]
 
+    config = MODEL_CONFIG["resume_tailor"]
+    print("\n" + "-" * 80)
+    print(f"config: {config}")
+    print("-" * 80 + "\n")
+    print(f"messages: {messages}")
+    print("-" * 80 + "\n")
+
     response = await client.beta.chat.completions.parse(
-        model=MODEL_NAME,
+        model=config["model"],
         messages=messages,
-        response_format=TailoringSuggestions,
+        response_format=TailoringResponse,
+        temperature=config["temperature"],
+        top_p=config["top_p"],
+        max_tokens=config["max_tokens"],
     )
     tailoring_suggestions = response.choices[0].message.parsed
+
+    print("\n" + "-" * 80)
+    print(f"tailoring_suggestions: {tailoring_suggestions}")
+    print("-" * 80 + "\n")
+
     return tailoring_suggestions

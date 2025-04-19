@@ -525,19 +525,7 @@ async function getTailoringSuggestions() {
 
     // Display suggestions with nice formatting
     if (suggestionData.suggestions) {
-      // Format suggestions as a list if they contain line breaks
-      let formattedSuggestions = suggestionData.suggestions;
-      if (formattedSuggestions.includes("\n")) {
-        const suggItems = formattedSuggestions
-          .split("\n")
-          .filter((s) => s.trim());
-        if (suggItems.length > 1) {
-          formattedSuggestions =
-            "<ul>" +
-            suggItems.map((sugg) => `<li>${sugg}</li>`).join("") +
-            "</ul>";
-        }
-      }
+      let formattedSuggestions = "<ul>" + suggestionData.suggestions.map(s => `<li>${s}</li>`).join("") + "</ul>";
 
       tailoringSuggestionsContainer.innerHTML = `
                 <div class="card border-0">

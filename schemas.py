@@ -75,11 +75,10 @@ class JobMarkdownRequest(BaseModel):
 
 # --- Pydantic Models for Tailoring Suggestions --- #
 class TailoringRequest(BaseModel):
-    job_description: str
-
+    job_description: str = Field(..., description="The job description to be tailored.")
 
 class TailoringResponse(BaseModel):
-    suggestions: list[str]  # Changed from str to list[str] based on LLM function
+    suggestions: list[str] = Field(..., description="A list of resume tailored suggestions for the job application.")
 
 
 # --- Pydantic Model for LLM Cleaned Job Data from Extension --- #
@@ -125,7 +124,7 @@ class ResumeData(BaseModel):
 # --- Pydantic Model for Job Ranking --- #
 class JobRanking(BaseModel):
     score: float = Field(
-        ..., description="A score between 0.0 and 1.0 indicating job fit."
+        ..., description="A score between 0.0 and 10.0 indicating job fit."
     )
     explanation: str = Field(
         ..., description="A brief explanation of the ranking score."

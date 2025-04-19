@@ -154,27 +154,6 @@ async def rank_job_with_llm(db: Session, job_id: int, user_id: int):
     return score, explanation
 
 
-async def suggest_resume_tailoring(job_description: str, profile_snippet: str):
-    logger.info("Generating resume tailoring suggestions.")
-
-    try:
-        # Use the new structured tailoring suggestions function
-        suggestions = await call_llm_for_resume_tailoring_cached(
-            job_description, profile_snippet
-        )
-
-        # Format suggestions as a string
-        formatted_suggestions = "\n".join(
-            [suggestion for suggestion in suggestions.suggestions]
-        )
-
-        logger.info("Successfully generated resume tailoring suggestions.")
-        return formatted_suggestions.strip()
-    except Exception as e:
-        logger.error(f"LLM call failed for resume tailoring suggestions: {e}")
-        return None
-
-
 async def map_form_fields_with_llm(
     db: Session, user_id: int, form_fields: list[schemas.FormFieldInfo]
 ) -> dict[str, str]:
@@ -262,34 +241,12 @@ Example Response Format:
 
 async def get_tailoring_suggestions(profile_text: str, job_description: str) -> str:
     logger.info("Generating tailoring suggestions...")
+    # Call the new structured tailoring suggestions function
+    suggestions: schemas.TailoringResponse = await call_llm_for_resume_tailoring_cached(
+        job_description, profile_text
+    )
 
-    try:
-        # Call the new structured tailoring suggestions function
-        response = await call_llm_for_resume_tailoring_cached(
-            job_description, profile_text
-        )
-
-        # Extract suggestions from TailoringSuggestions object
-        if hasattr(response, "suggestions"):
-            suggestions = response.suggestions
-        else:
-            # Handle case where response might be the direct value
-            suggestions = response
-
-        # Format suggestions as a string if they're returned as a list
-        if isinstance(suggestions, list):
-            formatted_suggestions = "\n".join(
-                [suggestion for suggestion in suggestions]
-            )
-        else:
-            formatted_suggestions = str(suggestions)
-
-        logger.info("Successfully generated tailoring suggestions.")
-        return formatted_suggestions
-
-    except Exception as e:
-        logger.error(f"Error calling LLM for tailoring suggestions: {e}")
-        raise Exception(f"LLM API call failed: {e}")
+    return suggestions
 
 
 # Resume parsing function using a single LLM call for structured output

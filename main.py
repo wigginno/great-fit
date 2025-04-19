@@ -645,33 +645,6 @@ async def rank_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get
     return {"score": score, "explanation": explanation}
 
 
-class ResumeTailoringRequest(BaseModel):
-    job_description: str
-    profile_snippet: str
-
-
-class ResumeTailoringResponse(BaseModel):
-    suggestions: Optional[str] = None
-
-
-@app.post(
-    "/resume/suggest_tailoring",
-    response_model=ResumeTailoringResponse,
-    tags=["LLM Features"],
-)
-async def suggest_tailoring_endpoint(request: ResumeTailoringRequest):
-    """Generates resume tailoring suggestions based on job description and profile snippet."""
-    suggestions = await logic.suggest_resume_tailoring(
-        job_description=request.job_description, profile_snippet=request.profile_snippet
-    )
-    if suggestions is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to generate resume tailoring suggestions using LLM",
-        )
-    return {"suggestions": suggestions}
-
-
 # --- Autofill Mapping Endpoint ---
 @app.post("/autofill/map_poc", response_model=Dict[str, str], tags=["Autofill"])
 async def map_autofill_fields_poc(
@@ -719,10 +692,10 @@ async def get_tailoring_suggestions_endpoint(
         )
 
     try:
-        suggestions = await logic.get_tailoring_suggestions(
+        suggestions: schemas.TailoringResponse = await logic.get_tailoring_suggestions(
             profile_text=db_profile, job_description=request_data.job_description
         )
-        return schemas.TailoringResponse(suggestions=suggestions)
+        return suggestions
     except Exception as e:
         print(f"Error generating tailoring suggestions: {e}")
         raise HTTPException(
