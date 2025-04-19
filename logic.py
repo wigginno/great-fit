@@ -325,7 +325,6 @@ async def format_job_details_with_llm(job_description: str) -> dict:
         """
 
         # Set up a simple request to the LLM
-        import openai
         from openai import OpenAI
         import os
 

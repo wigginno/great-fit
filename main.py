@@ -6,7 +6,6 @@ from fastapi import (
     UploadFile,
     File,
     Request,
-    Form,
     BackgroundTasks,
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,10 +24,13 @@ from docx import Document
 import logging
 import asyncio
 from sse_starlette.sse import EventSourceResponse
-import json
 
-import models, schemas, crud, logic, llm_interaction
-from database import SessionLocal, engine, create_db_and_tables, get_db
+import models
+import schemas
+import crud
+import logic
+import llm_interaction
+from database import SessionLocal, create_db_and_tables, get_db
 
 # Create DB tables on startup
 create_db_and_tables()
@@ -617,8 +619,6 @@ async def save_job_from_extension(
 
 
 # --- Job Ranking and Tailoring Endpoints ---
-from pydantic import BaseModel
-from typing import Optional
 
 
 class JobRankResponse(BaseModel):

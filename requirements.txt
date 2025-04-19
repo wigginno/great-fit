@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 pydantic
+pydantic-settings
 python-dotenv
 python-multipart # For form data/file uploads
 eval_type_backport  # For Python <3.10 compatibility
