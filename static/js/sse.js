@@ -146,18 +146,11 @@ function connectToSSE(userId) {
   });
 
   // Handle job processing count updates
-  eventSource.addEventListener("processing_count_update", function(event) {
-    const eventData = JSON.parse(event.data);
-    console.log("SSE: Received processing_count_update", eventData);
-    // Update UI if needed to show processing status
-    const processingCountIndicator = document.getElementById("processingCountIndicator");
-    if (processingCountIndicator) {
-      if (eventData.count > 0) {
-        processingCountIndicator.style.display = "inline-block";
-        processingCountIndicator.textContent = eventData.count;
-      } else {
-        processingCountIndicator.style.display = "none";
-      }
+  eventSource.addEventListener("processing_count_update", function (event) {
+    const data = JSON.parse(event.data);
+    console.log("SSE: Received processing_count_update", data);
+    if (typeof window.updateProcessingIndicator === 'function') {
+      window.updateProcessingIndicator(data.count);
     }
   });
 }

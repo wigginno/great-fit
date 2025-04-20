@@ -109,6 +109,10 @@ async function saveModalJob() {
   }
 
   try {
+    // Afficher immédiatement le compteur +1
+    const current = parseInt(document.getElementById('savingIndicatorText').dataset.count || '0', 10);
+    updateProcessingIndicator(current + 1);
+
     // Disable buttons and show loading
     modalSaveBtn.disabled = true;
     modalCancelBtn.disabled = true;
@@ -412,3 +416,20 @@ function removeJobFromList(jobId) {
 
 // expose for SSE consumer
 window.removeJobFromList = removeJobFromList;
+
+// --- Processing Indicator Utility ---
+function updateProcessingIndicator(count) {
+  const indicator = document.getElementById('savingIndicator');
+  const text      = document.getElementById('savingIndicatorText');
+  if (!indicator || !text) return;
+
+  if (count > 0) {
+    indicator.style.display = 'flex';          // garde le spinner visible
+    text.textContent = `Processing ${count} Job${count > 1 ? 's' : ''}`;
+    text.dataset.count = count;
+  } else {
+    indicator.style.display = 'none';
+    text.dataset.count = 0;
+  }
+}
+window.updateProcessingIndicator = updateProcessingIndicator;
