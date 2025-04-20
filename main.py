@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from typing import List, Dict, Optional
+from typing import List, Optional
 import json
 from pydantic import BaseModel
 import os
@@ -24,20 +24,20 @@ from docx import Document
 import logging
 import asyncio
 from sse_starlette.sse import EventSourceResponse
+import openai
 
 import models
 import schemas
 import crud
 import logic
-import llm_interaction
 from database import SessionLocal, create_db_and_tables, get_db
 
 # Create DB tables on startup
 create_db_and_tables()
 
 app = FastAPI(
-    title="Job Application Assistant PoC",
-    description="Backend API for the Job Application Assistant PoC",
+    title="Great Fit",
+    description="Backend API for Great Fit job application assistant",
     version="0.1.0",
 )
 
@@ -227,11 +227,22 @@ def create_or_update_profile_endpoint(
             db=db, user=schemas.UserCreate(email="user@example.com")
         )
 
-    user_profile = crud.create_or_update_user_profile(
+    crud.create_or_update_user_profile(
         db=db, user_id=user_id, profile=profile
     )
+    # Retrieve the updated profile to return it
+    profile_json_str = crud.get_user_profile(db=db, user_id=user_id)
+    if profile_json_str is None:
+        # User exists but has no profile
+        return Response(
+            status_code=204,  # No Content
+            headers={"X-Profile-Status": "no_profile_found"},
+        )
+
+    # Normal case - return the profile
+    profile_data = json.loads(profile_json_str)
     return schemas.UserProfile(
-        id=user_id, owner_email=user.email, profile_data=profile.profile_data
+        id=user_id, owner_email=user.email, profile_data=profile_data
     )
 
 
@@ -267,7 +278,7 @@ async def upload_resume_endpoint(
 
     # Create or update the user profile with the parsed data
     profile = schemas.UserProfileCreate(profile_data=profile_data)
-    user_profile = crud.create_or_update_user_profile(
+    crud.create_or_update_user_profile(
         db=db, user_id=user_id, profile=profile
     )
 
@@ -313,41 +324,6 @@ def get_profile_endpoint(user_id: int, db: Session = Depends(get_db)):
 
     # Convert to dictionary and return as JSON response
     return JSONResponse(content=profile.model_dump())
-
-
-# --- Job Endpoints (Assuming user_id=1 for PoC) ---
-@app.post("/users/{user_id}/jobs/", tags=["Jobs"])
-async def create_job_endpoint(
-    user_id: int, job: schemas.JobCreate, db: Session = Depends(get_db)
-):
-    # Verify user exists
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Format the job description with LLM
-    formatted_job_data = await logic.format_job_details_with_llm(job.description)
-
-    # Update the job description with formatted content
-    job = schemas.JobCreate(
-        title=formatted_job_data.get("title", job.title) or job.title,
-        company=formatted_job_data.get("company", job.company) or job.company,
-        description=json.dumps(
-            formatted_job_data
-        ),  # Store the full formatted data as JSON
-    )
-
-    created_job = crud.create_job(db=db, job=job, user_id=user_id)
-
-    return JSONResponse(
-        content={
-            "id": created_job.id,
-            "title": created_job.title,
-            "company": created_job.company,
-            "description": created_job.description,
-            "user_id": created_job.user_id,
-        }
-    )
 
 
 @app.get("/users/{user_id}/jobs/", response_model=List[schemas.Job], tags=["Jobs"])
@@ -413,121 +389,122 @@ async def process_job_in_background(
     Processes job cleaning, saving, ranking, and notification in the background.
     Manages its own database session and uses a semaphore for SQLite write safety.
     """
-    job_id_for_logging = "N/A"
-    final_job_data_for_sse = None
+    logger.info("Background job processing starting.")
+
+    db_session: Session | None = None
+    job_id: int | None = None
+    created_job_data = {}
+
     try:
-        # --- LLM Call 1: Clean Markdown (Outside DB lock) ---
-        logger.debug(
-            f"BG Task: Calling LLM to clean job markdown for user {user_id}..."
-        )
-        cleaned_data = await llm_interaction.call_llm_to_clean_job_markdown(
+        # --- 1. Clean Markdown --- #
+        logger.info(f"BG Task: Cleaning markdown for user {user_id}")
+        cleaned_data: schemas.CleanedJobDescription = await logic.clean_job_description(
             markdown_content
         )
-        logger.info(f"BG Task: LLM cleaning finished for user {user_id}.")
+        logger.info(f"BG Task: Markdown cleaned for user {user_id}")
 
-        async with db_write_semaphore:  # <-- Acquire semaphore ONLY for DB writes
-            db: Session | None = None
-            try:
-                db = SessionLocal()
-
-                # --- Get User (Inside lock, before writes) ---
-                user = crud.get_user_by_id(db, user_id=user_id)
-                if user is None:
-                    logger.error(
-                        f"BG Task: User {user_id} not found. Aborting job processing."
-                    )
-                    # No need to decrement count here, outer finally handles it.
-                    return  # Exit early
-                # --- Create Job Entry (Inside DB lock) ---
-                logger.debug(f"BG Task: Creating job entry for user {user_id}...")
-                job_data_to_create = schemas.JobCreate(
-                    title=cleaned_data.title or "Unknown Title",
-                    company=cleaned_data.company or "Unknown Company",
-                    location=cleaned_data.location,
-                    description=cleaned_data.cleaned_markdown or markdown_content,
-                    url=cleaned_data.url,
-                    user_id=user.id,
-                    raw_markdown=markdown_content,
-                )
-                db_job = crud.create_job(db=db, job=job_data_to_create, user_id=user_id)
-                job_id_for_logging = db_job.id
-                logger.info(
-                    f"BG Task: Successfully created job '{db_job.title}' (ID: {db_job.id}) for user {user_id}."
-                )
-
-                # --- Rank Job (LLM Call + DB Update inside Lock) ---
-                logger.info(
-                    f"BG Task: Calling LLM to rank job '{db_job.title}' (ID: {db_job.id}) for user {user_id}."
-                )
-                score, explanation = await logic.rank_job_with_llm(
-                    db, db_job.id, user_id
-                )
-                if score is not None:
-                    logger.info(
-                        f"BG Task: Successfully ranked job '{db_job.title}' (ID: {db_job.id}). Score: {score}"
-                    )
-                else:
-                    logger.warning(
-                        f"BG Task: LLM Ranking failed or skipped for job {db_job.id}"
-                    )
-
-                # --- Commit Transaction (Inside Lock) ---
-                db.commit()
-                logger.info(f"BG Task: Committed transaction for job {db_job.id}.")
-
-                # Refresh db_job to get final state after commit (Inside Lock)
-                db.refresh(db_job)
-                # Prepare data for SSE *after* commit and refresh
-                final_job_data_for_sse = schemas.Job.model_validate(db_job)
-
-            except Exception as db_error:  # Catch errors within the lock separately
-                logger.error(
-                    f"BG Task: Error during DB operations for job (ID: {job_id_for_logging}) user {user_id}: {db_error}",
-                    exc_info=True,
-                )
-                # Send error notification via SSE (if manager available)
-                await manager.send_personal_message(
-                    {"error": str(db_error), "job_id": job_id_for_logging},
-                    user_id,
-                    event="processing_error",
-                )
-                logger.info(f"Sent SSE event 'processing_error' to user {user_id}")
-                final_job_data_for_sse = None  # Ensure we don't send success SSE
-            finally:
-                if db:  # Close session if created
-                    db.close()
-        # --- Semaphore released here ---
-        # --- Send SSE Notification (Outside DB lock) ---
-        if final_job_data_for_sse:
-            logger.info(
-                f"BG Task: Sending 'job_processed' event for job {final_job_data_for_sse.id} to user {user_id}"
+        # --- 2. Create Initial Job Record --- #
+        logger.info(f"BG Task: Creating initial job record for user {user_id}")
+        db_session = SessionLocal()
+        db_job = crud.create_job(
+            db=db_session,
+            user_id=user_id,
+            job=schemas.JobCreate(
+                title=cleaned_data.title,
+                company=cleaned_data.company,
+                description=cleaned_data.cleaned_markdown,
+                # ranking_score, ranking_explanation, tailoring_suggestions are initially null
             )
-            await manager.send_personal_message(
-                final_job_data_for_sse.model_dump(), user_id, event="job_processed"
-            )
-
-    except Exception as e:
-        # Catch errors happening *outside* the DB lock (e.g., initial LLM call)
-        logger.error(
-            f"BG Task: General error processing job for user {user_id}: {e}",
-            exc_info=True,
         )
+        db_session.commit()
+        db_session.refresh(db_job)
+        job_id = db_job.id
+        logger.info(f"BG Task: Initial job record created (ID: {job_id}) for user {user_id}")
+
+        # Prepare data for SSE event
+        created_job_data = schemas.Job.model_validate(db_job).model_dump()
+
+        # --- 3. Send 'job_created' SSE --- #
         await manager.send_personal_message(
-            {
-                "error": str(e),
-                "job_id": job_id_for_logging,
-            },  # job_id might still be N/A
-            user_id,
-            event="processing_error",
+            created_job_data, user_id, event="job_created"
         )
-        logger.info(f"Sent SSE event 'processing_error' to user {user_id}")
+        logger.info(f"BG Task: Sent 'job_created' SSE for job {job_id}")
+
+        # --- 4. Rank Job --- #
+        logger.info(f"BG Task: Ranking job {job_id} for user {user_id}")
+        score, explanation = await logic.rank_job_with_llm(db=db_session, job_id=job_id, user_id=user_id)
+        if score is None or explanation is None:
+            # Log error but continue to tailoring if possible
+            logger.error(f"BG Task: Failed to rank job {job_id}. Proceeding without ranking.")
+            score = None
+            explanation = None
+        else:
+            logger.info(f"BG Task: Job {job_id} ranked. Score: {score}")
+            # Update the job object in the current session (will be committed later)
+            db_job.ranking_score = score
+            db_job.ranking_explanation = explanation
+
+            # --- 5. Send 'job_ranked' SSE --- #
+            await manager.send_personal_message(
+                {"job_id": job_id, "score": score, "explanation": explanation}, user_id, event="job_ranked"
+            )
+            logger.info(f"BG Task: Sent 'job_ranked' SSE for job {job_id}")
+
+        # --- 6. Generate Tailoring Suggestions --- #
+        logger.info(f"BG Task: Generating tailoring suggestions for job {job_id}")
+        suggestions = await logic.generate_tailoring_suggestions(job=db_job, db=db_session)
+        if suggestions:
+            logger.info(f"BG Task: Tailoring suggestions generated for job {job_id}")
+            # Update the job object in the current session
+            db_job.tailoring_suggestions = suggestions
+
+            # --- 7. Commit Final Updates & Send 'job_tailored' SSE --- # (Commit happens here)
+            db_session.commit()
+            logger.info(f"BG Task: Final updates committed for job {job_id}")
+
+            await manager.send_personal_message(
+                {"job_id": job_id, "suggestions": suggestions}, user_id, event="job_tailored"
+            )
+            logger.info(f"BG Task: Sent 'job_tailored' SSE for job {job_id}")
+        else:
+            # Only commit ranking if tailoring failed but ranking succeeded
+            if score is not None:
+                 db_session.commit()
+                 logger.info(f"BG Task: Ranking update committed for job {job_id} (tailoring failed).")
+            logger.warning(f"BG Task: Failed to generate tailoring suggestions for job {job_id}. Skipping tailoring update.")
+
+    except openai.ContentFilterFinishReasonError as cf_error:
+        logger.error(f"BG Task: Content filter error processing job for user {user_id}: {cf_error}", exc_info=True)
+        await manager.send_personal_message(
+            {"error": "Content filter triggered", "message": "The job description could not be processed due to content filtering."}, user_id, event="job_error"
+        )
+    except Exception as e:
+        error_type = type(e).__name__
+        logger.error(f"BG Task: Error processing job for user {user_id} (Job ID: {job_id}): {error_type} - {e}", exc_info=True)
+        # Send specific error message to user if job ID exists
+        if job_id:
+            error_message = f"Failed to fully process job {job_id}. Error: {error_type}"
+            event_data = {"job_id": job_id, "error": error_type, "message": error_message}
+        else:
+            error_message = f"Failed to process job submission. Error: {error_type}"
+            event_data = {"error": error_type, "message": error_message}
+
+        await manager.send_personal_message(
+            event_data, user_id, event="job_error"
+        )
+        # Rollback if a session exists and an error occurred after initial commit
+        if db_session and job_id:
+            try:
+                db_session.rollback()
+                logger.info(f"BG Task: Rolled back changes for job {job_id} due to error.")
+            except Exception as rb_err:
+                logger.error(f"BG Task: Error during rollback for job {job_id}: {rb_err}", exc_info=True)
 
     finally:
-        # Decrement count regardless of success/failure, inside/outside lock
+        logger.info(f"Background job processing finished for user {user_id}.")
+        if db_session:
+            db_session.close()
         await manager.decrement_processing_count(user_id)
-        logger.debug(
-            f"BG Task: Decremented processing count for user {user_id}. Job ID attempted: {job_id_for_logging}"
-        )
 
 
 # --- Endpoint to save job from Chrome Extension --- #
@@ -546,6 +523,7 @@ async def save_job_from_extension(
     schedules the full processing (cleaning, saving, ranking) in the background,
     and returns an immediate 202 Accepted response.
     """
+    print(f"DEBUG: Entering save_job_from_extension for user {user_id}")
     logger.info(
         f"Endpoint: Received job markdown request from extension for user {user_id}. Scheduling background processing."
     )

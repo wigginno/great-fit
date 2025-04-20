@@ -610,3 +610,109 @@ pre {
     color: #6c757d;
     font-style: italic;
 }
+
+/* --- Toast Notification --- */
+.toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #4CAF50;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    animation: toast-in 0.5s;
+}
+
+.toast.error {
+    background-color: #f44336;
+}
+
+.toast.success {
+    background-color: #4CAF50;
+}
+
+.toast.warning {
+    background-color: #ffc107;
+}
+
+.toast.info {
+    background-color: #2196f3;
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: scale(0.5);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* --- Modal Styles --- */
+.modal {
+  display: none; /* Hidden by default */
+  position: fixed; /* Stay in place */
+  z-index: 1000; /* Sit on top */
+  left: 0;
+  top: 0;
+  width: 100%; /* Full width */
+  height: 100%; /* Full height */
+  overflow: auto; /* Enable scroll if needed */
+  background-color: rgba(0,0,0,0.6); /* Black w/ opacity (dim background) */
+}
+
+.modal-content {
+  background-color: #fefefe;
+  margin: 15% auto; /* 15% from the top and centered */
+  padding: 25px;
+  border: 1px solid #888;
+  width: 60%; /* Could be more or less, depending on screen size */
+  max-width: 700px;
+  border-radius: 8px;
+  position: relative;
+  box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2),0 6px 20px 0 rgba(0,0,0,0.19);
+}
+
+.modal-content h2 {
+  margin-top: 0;
+  color: #333;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+.modal-content textarea {
+  width: calc(100% - 20px); /* Account for padding */
+  height: 200px;
+  margin-bottom: 15px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+/* REMOVE THESE CUSTOM BUTTON STYLES - USING BOOTSTRAP NOW */
+
+.close-btn {
+  color: #aaa;
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.close-btn:hover,
+.close-btn:focus {
+  color: black;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+#modal-loading-indicator {
+  margin-left: 15px;
+  font-size: 1.2em;
+}
