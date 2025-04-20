@@ -228,9 +228,7 @@ def create_or_update_profile_endpoint(
             db=db, user=schemas.UserCreate(email="user@example.com")
         )
 
-    crud.create_or_update_user_profile(
-        db=db, user_id=user_id, profile=profile
-    )
+    crud.create_or_update_user_profile(db=db, user_id=user_id, profile=profile)
     # Retrieve the updated profile to return it
     profile_json_str = crud.get_user_profile(db=db, user_id=user_id)
     if profile_json_str is None:
@@ -279,9 +277,7 @@ async def upload_resume_endpoint(
 
     # Create or update the user profile with the parsed data
     profile = schemas.UserProfileCreate(profile_data=profile_data)
-    crud.create_or_update_user_profile(
-        db=db, user_id=user_id, profile=profile
-    )
+    crud.create_or_update_user_profile(db=db, user_id=user_id, profile=profile)
 
     # Create the response object and return as JSON
     response_data = {
@@ -337,7 +333,7 @@ def get_jobs_endpoint(user_id: int, db: Session = Depends(get_db)):
     return jobs
 
 
-@app.get("/users/{user_id}/jobs/{job_id}", tags=["Jobs"])
+@app.get("/users/{user_id}/jobs/{job_id}", response_model=schemas.Job, tags=["Jobs"])
 def get_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
     """
     Get a specific job by ID for a user
@@ -357,6 +353,7 @@ def get_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
             "user_id": job.user_id,
             "ranking_score": getattr(job, "ranking_score", None),
             "ranking_explanation": getattr(job, "ranking_explanation", None),
+            "tailoring_suggestions": getattr(job, "tailoring_suggestions", None),
         }
     )
 
@@ -367,8 +364,10 @@ async def delete_job_endpoint(
     job_id: int,
     db: Session = Depends(get_db),
 ):
-    if user_id != 1:                                   # keep existing auth guard
-        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
+    if user_id != 1:  # keep existing auth guard
+        raise HTTPException(
+            status_code=403, detail="Operation not permitted for this user"
+        )
 
     success = crud.delete_job(db=db, job_id=job_id, user_id=user_id)
     if not success:
@@ -418,12 +417,14 @@ async def process_job_in_background(
                 company=cleaned_data.company,
                 description=cleaned_data.cleaned_markdown,
                 # ranking_score, ranking_explanation, tailoring_suggestions are initially null
-            )
+            ),
         )
         db_session.commit()
         db_session.refresh(db_job)
         job_id = db_job.id
-        logger.info(f"BG Task: Initial job record created (ID: {job_id}) for user {user_id}")
+        logger.info(
+            f"BG Task: Initial job record created (ID: {job_id}) for user {user_id}"
+        )
 
         # Prepare data for SSE event
         created_job_data = schemas.Job.model_validate(db_job).model_dump()
@@ -436,10 +437,14 @@ async def process_job_in_background(
 
         # --- 4. Rank Job --- #
         logger.info(f"BG Task: Ranking job {job_id} for user {user_id}")
-        score, explanation = await logic.rank_job_with_llm(db=db_session, job_id=job_id, user_id=user_id)
+        score, explanation = await logic.rank_job_with_llm(
+            db=db_session, job_id=job_id, user_id=user_id
+        )
         if score is None or explanation is None:
             # Log error but continue to tailoring if possible
-            logger.error(f"BG Task: Failed to rank job {job_id}. Proceeding without ranking.")
+            logger.error(
+                f"BG Task: Failed to rank job {job_id}. Proceeding without ranking."
+            )
             score = None
             explanation = None
         else:
@@ -450,13 +455,17 @@ async def process_job_in_background(
 
             # --- 5. Send 'job_ranked' SSE --- #
             await manager.send_personal_message(
-                {"job_id": job_id, "score": score, "explanation": explanation}, user_id, event="job_ranked"
+                {"job_id": job_id, "score": score, "explanation": explanation},
+                user_id,
+                event="job_ranked",
             )
             logger.info(f"BG Task: Sent 'job_ranked' SSE for job {job_id}")
 
         # --- 6. Generate Tailoring Suggestions --- #
         logger.info(f"BG Task: Generating tailoring suggestions for job {job_id}")
-        suggestions = await logic.generate_tailoring_suggestions(job=db_job, db=db_session)
+        suggestions = await logic.generate_tailoring_suggestions(
+            job=db_job, db=db_session
+        )
         if suggestions:
             logger.info(f"BG Task: Tailoring suggestions generated for job {job_id}")
             # Update the job object in the current session
@@ -467,42 +476,66 @@ async def process_job_in_background(
             logger.info(f"BG Task: Final updates committed for job {job_id}")
 
             await manager.send_personal_message(
-                {"job_id": job_id, "suggestions": suggestions}, user_id, event="job_tailored"
+                {"job_id": job_id, "suggestions": suggestions},
+                user_id,
+                event="job_tailored",
             )
             logger.info(f"BG Task: Sent 'job_tailored' SSE for job {job_id}")
         else:
             # Only commit ranking if tailoring failed but ranking succeeded
             if score is not None:
-                 db_session.commit()
-                 logger.info(f"BG Task: Ranking update committed for job {job_id} (tailoring failed).")
-            logger.warning(f"BG Task: Failed to generate tailoring suggestions for job {job_id}. Skipping tailoring update.")
+                db_session.commit()
+                logger.info(
+                    f"BG Task: Ranking update committed for job {job_id} (tailoring failed)."
+                )
+            logger.warning(
+                f"BG Task: Failed to generate tailoring suggestions for job {job_id}. Skipping tailoring update."
+            )
 
     except openai.ContentFilterFinishReasonError as cf_error:
-        logger.error(f"BG Task: Content filter error processing job for user {user_id}: {cf_error}", exc_info=True)
+        logger.error(
+            f"BG Task: Content filter error processing job for user {user_id}: {cf_error}",
+            exc_info=True,
+        )
         await manager.send_personal_message(
-            {"error": "Content filter triggered", "message": "The job description could not be processed due to content filtering."}, user_id, event="job_error"
+            {
+                "error": "Content filter triggered",
+                "message": "The job description could not be processed due to content filtering.",
+            },
+            user_id,
+            event="job_error",
         )
     except Exception as e:
         error_type = type(e).__name__
-        logger.error(f"BG Task: Error processing job for user {user_id} (Job ID: {job_id}): {error_type} - {e}", exc_info=True)
+        logger.error(
+            f"BG Task: Error processing job for user {user_id} (Job ID: {job_id}): {error_type} - {e}",
+            exc_info=True,
+        )
         # Send specific error message to user if job ID exists
         if job_id:
             error_message = f"Failed to fully process job {job_id}. Error: {error_type}"
-            event_data = {"job_id": job_id, "error": error_type, "message": error_message}
+            event_data = {
+                "job_id": job_id,
+                "error": error_type,
+                "message": error_message,
+            }
         else:
             error_message = f"Failed to process job submission. Error: {error_type}"
             event_data = {"error": error_type, "message": error_message}
 
-        await manager.send_personal_message(
-            event_data, user_id, event="job_error"
-        )
+        await manager.send_personal_message(event_data, user_id, event="job_error")
         # Rollback if a session exists and an error occurred after initial commit
         if db_session and job_id:
             try:
                 db_session.rollback()
-                logger.info(f"BG Task: Rolled back changes for job {job_id} due to error.")
+                logger.info(
+                    f"BG Task: Rolled back changes for job {job_id} due to error."
+                )
             except Exception as rb_err:
-                logger.error(f"BG Task: Error during rollback for job {job_id}: {rb_err}", exc_info=True)
+                logger.error(
+                    f"BG Task: Error during rollback for job {job_id}: {rb_err}",
+                    exc_info=True,
+                )
 
     finally:
         logger.info(f"Background job processing finished for user {user_id}.")

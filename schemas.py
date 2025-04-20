@@ -64,6 +64,7 @@ class Job(JobBase):
     user_id: int
     ranking_score: Union[float, None] = None
     ranking_explanation: Union[str, None] = None
+    tailoring_suggestions: Union[str, None] = None
 
     model_config = ConfigDict(from_attributes=True)
 
