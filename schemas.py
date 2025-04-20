@@ -77,8 +77,12 @@ class JobMarkdownRequest(BaseModel):
 class TailoringRequest(BaseModel):
     job_description: str = Field(..., description="The job description to be tailored.")
 
+
 class TailoringResponse(BaseModel):
-    suggestions: list[str] = Field(..., description="A list of resume tailored suggestions for the job application.")
+    suggestions: list[str] = Field(
+        ...,
+        description="A list of resume tailored suggestions for the job application.",
+    )
 
 
 # --- Pydantic Model for LLM Cleaned Job Data from Extension --- #

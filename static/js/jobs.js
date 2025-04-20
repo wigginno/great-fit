@@ -32,7 +32,10 @@ async function loadJobs() {
 
     jobs.forEach((job) => {
       jobsHtml += `
-                <div class="job-card" data-job-id="${job.id}">
+                <div class="job-card position-relative" data-job-id="${job.id}">
+                    <button class="btn btn-sm btn-outline-danger delete-job-btn position-absolute top-0 end-0 m-2" data-job-id="${job.id}" title="Delete">
+                        <i class="bi bi-trash"></i>
+                    </button>
                     <div class="job-title">${job.title || "Untitled Job"}</div>
                     <div class="job-company">${job.company || "Unknown Company"}</div>
                     ${
@@ -179,6 +182,13 @@ async function saveModalJob() {
 
 // Function to handle clicking on a job in the jobs list
 function handleJobClick(event) {
+  // Handle delete button click on job list
+  const deleteBtn = event.target.closest(".delete-job-btn");
+  if (deleteBtn) {
+    const jobId = deleteBtn.getAttribute("data-job-id");
+    if (jobId) deleteJob(jobId);
+    return;
+  }
   const jobCard = event.target.closest(".job-card");
   if (jobCard) {
     const jobId = jobCard.getAttribute("data-job-id");

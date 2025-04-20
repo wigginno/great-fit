@@ -1,7 +1,15 @@
 // Ultra simple profile formatter
 function formatProfileData(data) {
-  if (!data || typeof data !== "object")
+  if (!data || typeof data !== "object" || Object.keys(data).length === 0)
     return "<p>No profile data available</p>";
+
+  // Only if we have actual profile data (skills or sections), add the controls and content
+  if (
+    !(data.skills && data.skills.length > 0) &&
+    !(data.sections && data.sections.length > 0)
+  ) {
+    return "<p>No profile data available</p>";
+  }
 
   // Add control bar first
   let html = `
@@ -22,14 +30,13 @@ function formatProfileData(data) {
     const collapseId = `profileSectionCollapse${sectionIndex++}`;
     return (
       `<div class="section">` +
-      `<h2 class="collapsible-header" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">` +
+      `<h2 class="collapsible-header" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true" aria-controls="${collapseId}">` +
       `<span>${title}</span>` + // Wrap title in span for flex layout
       `<span class="collapse-icon">` +
-        `<i class="bi bi-chevron-down"></i>` +
-        `<i class="bi bi-chevron-up"></i>` +
+      `<i class="bi bi-chevron-down"></i>` +
       `</span>` +
       `</h2>` +
-      `<div class="collapse" id="${collapseId}">` +
+      `<div class="collapse show" id="${collapseId}">` +
       `<div class="section-content">${contentHtml}</div>` + // Inner div for padding/margin
       `</div>` +
       `</div>`
@@ -38,7 +45,8 @@ function formatProfileData(data) {
 
   // Display skills section first (only special case)
   if (data.skills) {
-    const skillsHtml = '<ul class="skills">' +
+    const skillsHtml =
+      '<ul class="skills">' +
       data.skills.map((skill) => `<li>${String(skill).trim()}</li>`).join("") +
       "</ul>";
     html += createCollapsibleSection("Skills", skillsHtml);

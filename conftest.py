@@ -10,7 +10,7 @@ from main import app, get_db
 # Import database components needed for setup
 from database import Base
 
-TEST_DATABASE_URL = "sqlite:///./test_job_assistant_poc.db"
+TEST_DATABASE_URL = "sqlite:///./great-fit-test.db"
 
 connect_args = (
     {"check_same_thread": False} if TEST_DATABASE_URL.startswith("sqlite") else {}

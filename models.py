@@ -1,6 +1,5 @@
+from sqlalchemy.orm import relationship, mapped_column, Mapped
 from sqlalchemy import Column, Integer, String, Float, ForeignKey
-from sqlalchemy.orm import relationship
-
 from database import Base
 
 
@@ -11,7 +10,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     profile_json = Column(String)  # Store profile as JSON string for PoC
 
-    jobs = relationship("Job", back_populates="owner")
+    jobs = relationship("Job", back_populates="owner", foreign_keys="Job.owner_id")
 
 
 class Job(Base):
@@ -23,6 +22,10 @@ class Job(Base):
     company = Column(String)
     description = Column(String)
     ranking_score = Column(Float, nullable=True)
-    ranking_explanation = Column(String, nullable=True)
+    ranking_explanation: Mapped[str | None] = Column(String, nullable=True)
+    tailoring_suggestions: Mapped[str | None] = Column(String, nullable=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
 
-    owner = relationship("User", back_populates="jobs")
+    owner: Mapped["User"] = relationship(
+        "User", back_populates="jobs", foreign_keys=[owner_id]
+    )
