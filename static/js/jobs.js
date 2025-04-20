@@ -123,20 +123,18 @@ async function saveModalJob() {
     // For now, hardcode user ID to 1
     const userId = 1;
 
-    // Prepare job data
-    const jobData = {
-      description: modalJobDescription.value,
-      title: modalJobTitle.value || "Untitled Job", // Optional
-      company: modalJobCompany.value || "Unknown Company", // Optional
+    // Payload attendu par l’endpoint backend
+    const payload = {
+      markdown_content: modalJobDescription.value,
     };
 
-    // Save job to server
-    const response = await fetch(`/users/${userId}/jobs/`, {
+    // Appel de l’endpoint POST /jobs/from_extension
+    const response = await fetch(`/users/${userId}/jobs/from_extension`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(jobData),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -144,13 +142,11 @@ async function saveModalJob() {
       throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
     }
 
-    const savedJob = await response.json();
-
     // Close modal
     addJobModal.style.display = "none";
 
-    // Show success message
-    showToast(`Job successfully added: ${jobData.title}`);
+    // Show success message (le SSE créera la carte lorsqu’elle sera prête)
+    showToast("Job submitted – processing in background...");
 
     // Reset form (don't reload jobs - SSE will handle this)
     modalJobTitle.value = "";
