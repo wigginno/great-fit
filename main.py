@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import (
     FastAPI,
     Depends,
@@ -361,24 +362,27 @@ def get_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
 
 
 @app.delete("/users/{user_id}/jobs/{job_id}", tags=["Jobs"])
-def delete_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
-    """
-    Delete a specific job by ID for a user
-    """
-    if user_id != 1:
-        raise HTTPException(
-            status_code=403, detail="Operation not permitted for this user"
-        )
+async def delete_job_endpoint(
+    user_id: int,
+    job_id: int,
+    db: Session = Depends(get_db),
+):
+    if user_id != 1:                                   # keep existing auth guard
+        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
 
-    # Attempt to delete the job
     success = crud.delete_job(db=db, job_id=job_id, user_id=user_id)
-
     if not success:
         raise HTTPException(
-            status_code=404, detail=f"Job with id {job_id} not found for user {user_id}"
+            status_code=404,
+            detail=f"Job with id {job_id} not found for user {user_id}",
         )
+    db.commit()
 
-    return {"message": "Job deleted successfully"}
+    # Notify front‑end via SSE
+    await manager.send_personal_message(
+        {"job_id": job_id}, user_id, event="job_deleted"
+    )
+    return {"status": "deleted"}
 
 
 # --- Endpoint to save job from Chrome Extension --- #
