@@ -186,7 +186,7 @@ function handleJobClick(event) {
       // For now, hardcode user ID to 1
       const userId = 1;
       showJobDetails(jobId, userId);
-      
+
       // Update selected state
       document.querySelectorAll(".job-card").forEach(card => {
         card.classList.remove("selected");
@@ -200,7 +200,7 @@ function handleJobClick(event) {
 function handleJobActions(event) {
   const rankBtn = event.target.closest(".rank-job-btn");
   const deleteBtn = event.target.closest(".delete-job-btn");
-  
+
   if (rankBtn) {
     const jobId = rankBtn.getAttribute("data-job-id");
     if (jobId) {
@@ -211,9 +211,7 @@ function handleJobActions(event) {
   } else if (deleteBtn) {
     const jobId = deleteBtn.getAttribute("data-job-id");
     if (jobId) {
-      // For now, hardcode user ID to 1
-      const userId = 1;
-      deleteJob(jobId, userId);
+      deleteJob(jobId);
     }
   }
 }
@@ -380,41 +378,41 @@ async function showJobDetails(jobId, userId) {
   }
 }
 
-// Function to delete a job
-async function deleteJob(jobId, userId) {
-  if (confirm("Are you sure you want to delete this job?")) {
-    try {
-      const response = await fetch(`/users/${userId}/jobs/${jobId}`, {
-        method: "DELETE"
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-      }
-      
-      // Success - remove job card and clear details
-      const jobCard = document.querySelector(`.job-card[data-job-id="${jobId}"]`);
-      if (jobCard) {
-        jobCard.remove();
-      }
-      
-      const jobDetailsContainer = document.getElementById("jobDetails");
-      if (jobDetailsContainer) {
-        jobDetailsContainer.innerHTML = '<p class="placeholder">Select a job to view details</p>';
-      }
-      
-      // Show notification
-      showToast("Job deleted successfully");
-      
-      // Check if there are no more jobs
-      const jobsList = document.getElementById("jobsList");
-      if (jobsList && !jobsList.querySelector(".job-card")) {
-        jobsList.innerHTML = '<p class="placeholder">No jobs saved yet. Add a job using the form above.</p>';
-      }
-    } catch (error) {
-      console.error("Error deleting job:", error);
-      showToast(`Error deleting job: ${error.message}`, "error");
+// --- Delete Job Helpers ---
+
+async function deleteJob(jobId) {
+  try {
+    const res = await fetch(`/users/1/jobs/${jobId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Failed to delete job');
     }
+    removeJobFromList(jobId);
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'Deletion error', 'error');   // reuse existing toast fn
   }
 }
+
+function removeJobFromList(jobId) {
+  const el = document.querySelector(`[data-job-id="${jobId}"]`);
+  if (el) el.remove();
+
+  // clear details panel if it was showing this job
+  if (window.selectedJobId === jobId) {
+    document.getElementById('jobDetails').innerHTML =
+      '<p class="placeholder">Select a job to view details...</p>';
+    window.selectedJobId = null;
+  }
+
+  // Check if there are no more jobs
+  const jobsList = document.getElementById("jobsList");
+  if (jobsList && !jobsList.querySelector(".job-card")) {
+    jobsList.innerHTML = '<p class="placeholder">No jobs saved yet. Add a job using the form above.</p>';
+  }
+}
+
+// expose for SSE consumer
+window.removeJobFromList = removeJobFromList;

@@ -44,21 +44,9 @@ function connectToSSE(userId) {
   eventSource.addEventListener("job_deleted", function(event) {
     const eventData = JSON.parse(event.data);
     console.log("SSE: Received job_deleted", eventData);
-    
-    // Remove the job card
-    const jobCard = document.querySelector(`.job-card[data-job-id="${eventData.job_id}"]`);
-    if (jobCard) {
-      jobCard.remove();
-    }
-    
-    // Clear details if the deleted job was being viewed
-    const jobDetails = document.getElementById("jobDetails");
-    const currentJobId = jobDetails.getAttribute("data-job-id");
-    if (currentJobId == eventData.job_id) {
-      jobDetails.innerHTML = '<p class="placeholder">Select a job to view details</p>';
-      jobDetails.removeAttribute("data-job-id");
-    }
-    
+
+    if (eventData.job_id) window.removeJobFromList(eventData.job_id);
+
     showToast(`Job ${eventData.job_id} was deleted`, "info");
   });
 
