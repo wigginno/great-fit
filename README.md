@@ -1,97 +1,148 @@
-# Great Fit - Job Application Assistant
+# Great Fit – Job Application Assistant
 
-This project uses Language Models (LLMs) to help you improve your job applications. The current code is a **Proof-of-Concept (PoC)** with the following features:
+A full-stack web app that leverages LLMs to analyse your resume, evaluate job postings and suggest tailored improvements, helping you quickly identify the **greatest fit** roles.
 
-*   Use your resume to automatically generate a profile.
-*   Paste a raw job description, and the LLM will try to format it nicely.
-*   Compare your saved jobs to your profile and rate them by how fit you are for the role (based on your resume).
-*   Generate resume tailoring suggestions for saved jobs.
+---
 
-## Tech Stack (for the PoC)
+## ✨ Key Features
 
-*   **Backend:** Python / FastAPI
-*   **Database:** SQLite (via SQLAlchemy)
-*   **LLM:** OpenRouter API (using `openai` client lib + `instructor` for structured output)
-*   **Frontend:** HTML, CSS, JavaScript
-*   **Core Libs:** `uvicorn`, `python-dotenv`, `python-multipart`, `PyPDF2`, `python-docx`, `aiofiles`
-*   **Testing:** `pytest`, `httpx`, `pytest-asyncio`, `pytest-env`
+| Area | Capability |
+|------|------------|
+| Resume | • Upload PDF/DOC/TXT and extract structured profile <br>• View profile in collapsible UI sections |
+| Jobs | • Add jobs via modal, live validation <br>• View, select, delete jobs <br>• Server-Side Events (SSE) stream real-time ranking/tailoring results |
+| Analysis | • Match scoring (0-10) + colour scale <br>• Detailed LLM explanation <br>• Tailoring suggestions persisted to **localStorage** so they survive refreshes |
+| UX | • Tailwind-styled responsive UI <br>• Alpine-powered toast notifications <br>• Keyboard-friendly modal workflow |
 
-## Getting Started
+---
 
-1.  **Clone:**
-    ```bash
-    git clone https://github.com/wigginno/job-application-assistant.git
-    cd job-application-assistant
-    ```
+## 🏗 Tech Stack
 
-2.  **Setup Environment (Recommended):**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # Windows: venv\Scripts\activate
-    ```
+| Layer | Tech |
+|-------|------|
+| Backend | **Python 3.11** · **FastAPI** · SQLModel/SQLAlchemy · SQLite |
+| LLM | [`openai`](https://github.com/openai/openai-python) client via **OpenRouter** API + [`instructor`](https://github.com/jxnl/instructor) for structured output |
+| Realtime | SSE endpoint (`/sse/{user_id}`) |
+| Frontend | **Tailwind CSS 4** (CLI build) · **Alpine.js v3** · **HTMX 1.9** · **Marked.js** |
+| Tooling | Node ≥ 18, npm scripts (`npm run dev / build`) |
+| Tests | `pytest`, `httpx`, `pytest-asyncio` |
 
-3.  **Install Deps:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+---
 
-4.  **Configure API Key:**
-    *   Copy `.env.example` to `.env`: `cp .env.example .env`
-    *   Edit `.env` and add your OpenRouter key:
-        ```env
-        # Get from OpenRouter account
-        OPENROUTER_API_KEY="sk-or-v1-..."
-        ```
+## 📂 Project Structure (trimmed)
 
-## Running the PoC
+```
+.
+├── main.py                  # FastAPI entry-point
+├── logic.py                 # Core resume / job processing
+├── crud.py                  # DB operations
+├── templates/               # Jinja2 templates (served by FastAPI)
+│   └── base.html            # Loads Tailwind CSS + JS bundles
+├── static/
+│   ├── css/                 # ⚠️ Compiled Tailwind CSS (ignored in git)
+│   ├── js/                  # Front-end modules (events.js, jobs.js, …)
+│   └── profileFormatter.js  # Renders profile collapsibles
+├── src/
+│   ├── index.css            # Tailwind input file (includes @tailwind directives)
+│   └── tailwind.css         # (optionally) more granular layers
+├── tailwind.config.js       # Purge paths & theme extension
+├── package.json             # Tailwind CLI + scripts
+└── requirements.txt         # Python deps
+```
 
-1.  **Start Server:**
-    ```bash
-    # --reload restarts server on code changes
-    uvicorn main:app --reload --port 8000
-    ```
+---
 
-2.  **Open in Browser:**
-    `http://127.0.0.1:8000`
+## ⚡ Quick Start (Local Dev)
 
-## Running Tests
+### 1. Clone & enter repo
+```bash
+git clone https://github.com/wigginno/great-fit.git
+cd great-fit
+```
 
-Make sure your virtual env is active and `.env` is configured.
+### 2. Python env & deps
+```bash
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
 
+### 3. Node (Tailwind) deps
+```bash
+# Requires Node ≥ 18
+npm install
+```
+
+### 4. Environment variables
+Copy and edit `.env` (see `.env.example`) – at minimum set the LLM key:
+```env
+OPENROUTER_API_KEY="sk-or-…"
+```
+
+### 5. Run everything
+Terminal #1 – Tailwind in watch mode (re-builds on class changes):
+```bash
+npm run dev
+```
+Terminal #2 – FastAPI backend:
+```bash
+uvicorn main:app --reload --port 8000
+```
+Head to <http://127.0.0.1:8000> 🎉
+
+---
+
+## 🏁 Production Build
+
+1. Build minified CSS:
+   ```bash
+   npm run build
+   ```
+2. Ensure `.env` contains prod keys.
+3. Launch with a real ASGI server (e.g. `gunicorn -k uvicorn.workers.UvicornWorker main:app`).
+
+---
+
+## 🧪 Running Tests
 ```bash
 pytest
 ```
 
-## Project Layout
+---
 
-```
-job-application-assistant/
-├── main.py             # FastAPI app, routes, static files
-├── logic.py            # Core application logic (LLM calls, processing, cache)
-├── llm_interaction.py  # Functions for talking to the LLM API via Instructor
-├── crud.py             # Database CRUD operations
-├── models.py           # SQLAlchemy DB models
-├── schemas.py          # Pydantic models (API validation, LLM structure)
-├── database.py         # DB connection setup
-├── static/             # Frontend Assets (HTML, CSS, JS)
-│   ├── index.html
-│   ├── script.js       # Main frontend logic
-│   └── profileFormatter.js # Helper for profile display
-├── requirements.txt    # Python dependencies
-├── .env                # API keys etc. (**Do not commit!**)
-├── test_main.py        # Integration tests for API endpoints
-├── conftest.py         # Pytest setup/fixtures
-└── job_assistant_poc.db # SQLite file (created automatically)
-```
+## 🤖 API Reference (high-level)
 
-## PoC Scope & Next Steps
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/users/{id}/resume/upload` | Upload resume file |
+| GET  | `/users/{id}/profile/` | Get parsed profile |
+| GET  | `/users/{id}/jobs/` | List jobs |
+| POST | `/users/{id}/jobs/` | Save new job |
+| GET  | `/users/{id}/jobs/{job_id}` | Get job details |
+| DELETE | same | Remove job |
+| GET  | `/sse/{id}` | SSE stream for ranking / tailoring events |
 
-This PoC is intentionally limited:
+_(see `main.py` for full router)_
 
-*   **Single User:** Hardcoded for `user_id=1`. Real auth is needed for multi-user support.
-*   **Minimal UI:** Frontend is just functional, not pretty.
-*   **Basic Errors:** Error handling could be more robust.
-*   **Prompts:** LLM prompts are basic and could be tuned for better results.
-*   **Simple Cache:** Uses in-memory caching; a persistent cache (e.g., Redis) would be better.
-*   **Autofill:** Very experimental, needs significant development.
-*   **No Deployment Setup:** Configured for local development only.
+---
+
+## 🔄 CSS Build Flow Explained
+
+1. Edit Tailwind classes in templates or `static/js/**/*.js`.
+2. Run `npm run dev` → Tailwind CLI watches `src/index.css` and template paths from `tailwind.config.js` and outputs compiled CSS to `static/css/tailwind.css`.
+3. The compiled file is **NOT committed** – it’s generated per-build.
+
+---
+
+## 📋 TODO / Roadmap
+
+- Authentication & multi-user support
+- Better error handling & optimistic UI
+- Deeper HTMX integration / partial updates
+- Dockerfile for easy deployment
+- CI pipeline (pytest + frontend lint/build)
+
+---
+
+## License
+
+MIT © Noah Wiggin
