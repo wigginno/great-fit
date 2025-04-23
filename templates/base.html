@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}Great Fit{% endblock %}</title>
+
+    <!-- Tailwind (dev via CDN, replaced by compiled CSS in production) -->
+    {% if env == 'dev' %}
+      <script src="https://cdn.tailwindcss.com"></script>
+    {% else %}
+      <link rel="stylesheet" href="/static/css/tailwind.css" />
+    {% endif %}
+  </head>
+  <body class="antialiased font-sans text-gray-800">
+    {% block content %}{% endblock %}
+    <!-- Toast Container -->
+    <div x-data="toastStore()" x-init="init()" x-show="visible" x-transition class="fixed bottom-4 right-4 w-64 z-50" :class="bgClass()">
+      <div class="flex items-center px-4 py-3 text-white">
+        <svg x-show="type==='success'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+        <svg x-show="type==='error'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        <svg x-show="type==='warning'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01" /></svg>
+        <span x-text="message"></span>
+      </div>
+    </div>
+
+    <!-- Alpine.js for minimal interactivity -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- HTMX for server interactions -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- Marked (Markdown parser) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Existing modular JS scripts (may be progressively replaced) -->
+    <script src="/static/js/core.js"></script>
+    <script src="/static/profileFormatter.js"></script>
+    <script src="/static/js/profile.js"></script>
+    <script src="/static/js/upload.js"></script>
+    <script src="/static/js/jobs.js"></script>
+    <script src="/static/js/sse.js"></script>
+    <script src="/static/js/ui.js"></script>
+    <script src="/static/js/events.js"></script>
+  </body>
+</html>

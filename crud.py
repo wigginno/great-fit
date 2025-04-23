@@ -51,9 +51,7 @@ def create_or_update_user_profile(
 def create_job(db: Session, job: schemas.JobCreate, user_id: int):
     # Create job with both user_id and owner_id set to same value
     db_job = models.Job(
-        **job.model_dump(exclude_unset=True), 
-        user_id=user_id,
-        owner_id=user_id
+        **job.model_dump(exclude_unset=True), user_id=user_id, owner_id=user_id
     )
     db.add(db_job)
     db.flush()  # Flush to assign ID and make object persistent before refreshing

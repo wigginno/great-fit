@@ -1,0 +1,13 @@
+{
+  "name": "great-fit-ui",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tailwindcss --input ./src/index.css --output ./static/css/tailwind.css --watch",
+    "build": "tailwindcss --input ./src/index.css --output ./static/css/tailwind.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4.1.4",
+    "@tailwindcss/cli": "^4.1.4"
+  }
+}

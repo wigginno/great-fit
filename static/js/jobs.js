@@ -6,8 +6,7 @@
 // Function to load and display jobs
 async function loadJobs() {
   try {
-    // For now, hardcode user ID to 1
-    const userId = 1;
+    const userId = window.currentUserId;
     const jobsContainer = document.getElementById("jobsList");
     jobsContainer.innerHTML = "Loading jobs...";
 
@@ -32,16 +31,16 @@ async function loadJobs() {
 
     jobs.forEach((job) => {
       jobsHtml += `
-                <div class="job-card position-relative" data-job-id="${job.id}">
-                    <button class="btn btn-sm btn-outline-danger delete-job-btn position-absolute top-0 end-0 m-2" data-job-id="${job.id}" title="Delete">
+                <div class="job-card relative rounded-lg bg-white border border-gray-200 shadow-sm p-4 hover:shadow-md transition cursor-pointer" data-job-id="${job.id}">
+                    <button class="delete-job-btn absolute top-2 right-2 text-red-500 hover:text-red-700" data-job-id="${job.id}" title="Delete">
                         <i class="bi bi-trash"></i>
                     </button>
-                    <div class="job-title">${job.title || "Untitled Job"}</div>
-                    <div class="job-company">${job.company || "Unknown Company"}</div>
+                    <div class="job-title font-medium text-gray-800">${job.title || "Untitled Job"}</div>
+                    <div class="job-company text-sm text-gray-500">${job.company || "Unknown Company"}</div>
                     ${
                       job.ranking_score !== null && job.ranking_score !== undefined
-                        ? `<div class="job-score">Match: ${job.ranking_score.toFixed(1)}/10</div>`
-                        : '<div class="job-score unranked">Scoring job...</div>'
+                        ? `<div class="job-score mt-2 inline-block rounded px-2 py-0.5 text-xs font-semibold text-white">Match: ${job.ranking_score.toFixed(1)}/10</div>`
+                        : '<div class="job-score mt-2 inline-block rounded px-2 py-0.5 text-xs font-semibold text-white unranked">Scoring job...</div>'
                     }
                 </div>
             `;
@@ -61,14 +60,14 @@ async function loadJobs() {
           job.ranking_score !== null &&
           job.ranking_score !== undefined
         ) {
-          // Map score 0-10 to hue 0-120 (Red to Green)
-          const score = Math.max(0, Math.min(10, job.ranking_score)); // Clamp score between 0 and 10
-          const hue = (score / 10) * 120;
+          // Gradient-based color mapping
+          const clamped = Math.max(0, Math.min(10, job.ranking_score));
+          const hue = (clamped / 10) * 120;
           scoreElement.style.backgroundColor = `hsl(${hue}, 90%, 45%)`;
-          scoreElement.style.color = "white"; // Set text color for contrast
-          scoreElement.style.padding = "0.1rem 0.4rem"; // Add some padding
-          scoreElement.style.borderRadius = "0.25rem"; // Add rounded corners
-          scoreElement.style.display = "inline-block"; // Make it inline-block to fit content
+          scoreElement.style.color = "white";
+          scoreElement.style.padding = "0.1rem 0.4rem";
+          scoreElement.style.borderRadius = "0.25rem";
+          scoreElement.style.display = "inline-block";
         } else if (
           scoreElement &&
           scoreElement.classList.contains("unranked")
@@ -102,9 +101,8 @@ async function saveModalJob() {
   if (!modalJobDescription.value.trim()) {
     const errorDiv = document.getElementById("modal-error") || document.createElement("div");
     errorDiv.id = "modal-error";
-    errorDiv.className = "alert alert-danger mt-3";
-    errorDiv.textContent = "Job description is required.";
-    
+    errorDiv.className = "mt-3 text-sm text-red-600";
+
     if (!document.getElementById("modal-error")) {
       modalJobDescription.after(errorDiv);
     }
@@ -120,15 +118,14 @@ async function saveModalJob() {
     modalSaveBtn.disabled = true;
     modalCancelBtn.disabled = true;
     modalLoadingIndicator.style.display = "inline-block";
-    
+
     // Remove any previous error message
     const errorDiv = document.getElementById("modal-error");
     if (errorDiv) {
       errorDiv.remove();
     }
 
-    // For now, hardcode user ID to 1
-    const userId = 1;
+    const userId = window.currentUserId;
 
     // Payload attendu par l’endpoint backend
     const payload = {
@@ -162,16 +159,16 @@ async function saveModalJob() {
 
   } catch (error) {
     console.error("Error saving job:", error);
-    
+
     // Show error in modal
     const errorDiv = document.getElementById("modal-error") || document.createElement("div");
     errorDiv.id = "modal-error";
-    errorDiv.className = "alert alert-danger mt-3";
-    errorDiv.textContent = `Error saving job: ${error.message}`;
-    
+    errorDiv.className = "mt-3 text-sm text-red-600";
+
     if (!document.getElementById("modal-error")) {
       modalJobDescription.after(errorDiv);
     }
+    errorDiv.textContent = `Error saving job: ${error.message}`;
   } finally {
     // Re-enable buttons and hide loading
     modalSaveBtn.disabled = false;
@@ -193,8 +190,14 @@ function handleJobClick(event) {
   if (jobCard) {
     const jobId = jobCard.getAttribute("data-job-id");
     if (jobId) {
-      // For now, hardcode user ID to 1
-      const userId = 1;
+      // Toggle off if already selected
+      if (jobCard.classList.contains("selected")) {
+        const details = document.getElementById("jobDetails");
+        if (details) details.innerHTML = '';
+        jobCard.classList.remove("selected");
+        return;
+      }
+      const userId = window.currentUserId;
       showJobDetails(jobId, userId);
 
       // Update selected state
@@ -214,8 +217,7 @@ function handleJobActions(event) {
   if (rankBtn) {
     const jobId = rankBtn.getAttribute("data-job-id");
     if (jobId) {
-      // For now, hardcode user ID to 1
-      const userId = 1;
+      const userId = window.currentUserId;
       rankJob(jobId, userId);
     }
   } else if (deleteBtn) {
@@ -231,23 +233,23 @@ async function showJobDetails(jobId, userId) {
   try {
     console.log(`Showing details for job ${jobId}`);
     const jobDetailsContainer = document.getElementById("jobDetails");
-    
+
     if (!jobDetailsContainer) {
       console.error("Job details container not found");
       return;
     }
-    
+
     jobDetailsContainer.innerHTML = '<div class="loading-spinner-container"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
-    
+
     const response = await fetch(`/users/${userId}/jobs/${jobId}`);
-    
+
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
     }
-    
+
     const job = await response.json();
-    
+
     // Load persisted ranking and suggestions for reload fallback
     const storedScore = localStorage.getItem(`job_ranked_score_${jobId}`);
     if (job.ranking_score == null && storedScore != null) {
@@ -261,7 +263,7 @@ async function showJobDetails(jobId, userId) {
     if ((job.tailoring_suggestions == null || job.tailoring_suggestions === '') && storedSuggestions) {
       job.tailoring_suggestions = storedSuggestions;
     }
-    
+
     // Format job description with markdown parser if available
     let formattedDescription = job.description || '';
     if (window.marked && formattedDescription) {
@@ -270,7 +272,7 @@ async function showJobDetails(jobId, userId) {
       // Basic formatting fallback
       formattedDescription = formattedDescription.replace(/\n/g, '<br>');
     }
-    
+
     // Create HTML for job details
     let jobHTML = `
       <div class="job-details-header">
@@ -281,7 +283,7 @@ async function showJobDetails(jobId, userId) {
         <div class="job-description">${formattedDescription}</div>
       </div>
     `;
-    
+
     // Add ranking section
     jobHTML += `
       <div class="job-ranking-section mt-4">
@@ -290,7 +292,7 @@ async function showJobDetails(jobId, userId) {
         </div>
         <div id="ranking-details-${jobId}" class="content-section">
     `;
-    
+
     if (job.ranking_score !== null && job.ranking_score !== undefined) {
       // Determine score class
       let scoreClass = 'low';
@@ -299,7 +301,7 @@ async function showJobDetails(jobId, userId) {
       } else if (job.ranking_score >= 5.0) {
         scoreClass = 'medium';
       }
-      
+
       // Add score display
       jobHTML += `
         <div class="score-display score-${scoreClass}">
@@ -307,7 +309,7 @@ async function showJobDetails(jobId, userId) {
           <div class="score-label">Match Score</div>
         </div>
       `;
-      
+
       // Add explanation if available (fallback to eventData.explanation)
       const explanationText = job.ranking_explanation || job.explanation;
       if (explanationText) {
@@ -332,9 +334,9 @@ async function showJobDetails(jobId, userId) {
         </div>
       `;
     }
-    
+
     jobHTML += `</div>`; // End ranking-details
-    
+
     // Add tailoring suggestions section
     jobHTML += `
       <div class="job-tailoring-section mt-4">
@@ -364,12 +366,12 @@ async function showJobDetails(jobId, userId) {
         </div>
       `;
     }
-    
+
     jobHTML += `</div>`; // End tailoring-suggestions
-    
+
     // Render HTML
     jobDetailsContainer.innerHTML = jobHTML;
-    
+
     // Immediately insert persisted tailoring suggestions after HTML build
     const storedSuggestions2 = localStorage.getItem(`job_tailored_suggestions_${jobId}`);
     if (storedSuggestions2) {
@@ -392,7 +394,7 @@ async function showJobDetails(jobId, userId) {
 
 async function deleteJob(jobId) {
   try {
-    const res = await fetch(`/users/1/jobs/${jobId}`, {
+    const res = await fetch(`/users/${window.currentUserId}/jobs/${jobId}`, {
       method: 'DELETE',
     });
     if (!res.ok) {

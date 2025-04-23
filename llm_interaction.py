@@ -42,9 +42,19 @@ client = AsyncOpenAI(
 
 # --- Model Configuration ---
 MODEL_CONFIG = {
-    "resume_parse":  {"model": "openai/gpt-4.1-mini",  "temperature": 0.0, "top_p": 1, "max_tokens": 4096},
-    "jd_clean":      {"model": "openai/gpt-4.1-mini",  "temperature": 0.0, "top_p": 1, "max_tokens": 8192},
-    "job_rank":      {"model": "openai/o4-mini-high", "max_tokens": 8192},
+    "resume_parse": {
+        "model": "openai/gpt-4.1-mini",
+        "temperature": 0.0,
+        "top_p": 1,
+        "max_tokens": 4096,
+    },
+    "jd_clean": {
+        "model": "openai/gpt-4.1-mini",
+        "temperature": 0.0,
+        "top_p": 1,
+        "max_tokens": 8192,
+    },
+    "job_rank": {"model": "openai/o4-mini-high", "max_tokens": 8192},
     "resume_tailor": {"model": "openai/o4-mini-high", "max_tokens": 8192},
 }
 COMMON_OPTS = {"seed": 123}
@@ -127,6 +137,7 @@ async def call_llm(
 
 # --- Specific LLM Interaction Functions --- #
 
+
 async def call_llm_for_resume_parsing(resume_text: str) -> Optional[ResumeData]:
     """Call LLM for structured resume parsing."""
 
@@ -187,10 +198,10 @@ async def call_llm_for_job_ranking(
     """Call LLM for job ranking."""
 
     system_prompt = """You are a job suitability scoring assistant that objectively evaluates how well an applicant matches a job description. You must follow specific scoring criteria to ensure consistent and fair evaluations.  
-    
+
     SCORING FRAMEWORK (0-10 scale):
     You must calculate the final score based on the following criteria, with each section's weight indicated:
-    
+
     1. SKILLS MATCH (40% of total score):
        IMPORTANT: Skills demonstrated through work experience/projects carry significantly more weight than skills merely listed in a skills section.
        - Score 9-10: Applicant has demonstrated 90%+ of required technical skills through actual experience/projects
@@ -289,7 +300,9 @@ Focus on incorporating keywords, highlighting relevant skills/experience, and us
 Return the output as a JSON object following the TailoringResponse schema, specifically populating the 'suggestions' field with a JSON list of strings.
 """
 
-    user_prompt = f"Job Description: {job_description}\nApplicant Profile: {applicant_profile}"
+    user_prompt = (
+        f"Job Description: {job_description}\nApplicant Profile: {applicant_profile}"
+    )
 
     response = await call_llm(
         system_prompt=system_prompt,

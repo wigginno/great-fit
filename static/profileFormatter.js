@@ -11,16 +11,8 @@ function formatProfileData(data) {
     return "<p>No profile data available</p>";
   }
 
-  // Add control bar first
+  // Profile content wrapper
   let html = `
-    <div class="profile-controls">
-      <a href="#" id="expandAllProfile" role="button" class="text-decoration-none text-secondary small me-3">
-        <i class="bi bi-arrows-expand me-1"></i>Expand All
-      </a>
-      <a href="#" id="collapseAllProfile" role="button" class="text-decoration-none text-secondary small">
-        <i class="bi bi-arrows-collapse me-1"></i>Collapse All
-      </a>
-    </div>
     <div class="profile-content">
   `;
   let sectionIndex = 0; // Counter for unique IDs
@@ -129,6 +121,16 @@ function formatProfileData(data) {
 document.addEventListener("DOMContentLoaded", function () {
   const style = document.createElement("style");
   style.textContent = `
+        /* Simple collapse behavior sans Bootstrap */
+        .collapse {
+            visibility: visible !important; /* override Tailwind's visibility:collapse */
+        }
+        .collapse:not(.show) {
+            display: none;
+        }
+        .collapse.show {
+            display: block;
+        }
         .profile-content {
             font-family: Arial, sans-serif;
             max-width: 800px;
@@ -172,6 +174,10 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         .section-content {
             padding: 10px 0 5px 15px;
+            color: #374151; /* Gray‑700 for readability */
+        }
+        .section-content, .section-content h3, .section-content li, .section-content p {
+            color: #374151;
         }
         ul {
             margin-top: 8px;
@@ -251,4 +257,22 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     `;
   document.head.appendChild(style);
+
+  // Lightweight collapse toggle (no Bootstrap JS required)
+  document.addEventListener("click", function (e) {
+    const header = e.target.closest(".collapsible-header");
+    if (!header) return;
+    const collapseId = header.getAttribute("data-bs-target");
+    if (!collapseId) return;
+    const target = document.querySelector(collapseId);
+    if (!target) return;
+    const isShown = target.classList.contains("show");
+    if (isShown) {
+      target.classList.remove("show");
+      header.setAttribute("aria-expanded", "false");
+    } else {
+      target.classList.add("show");
+      header.setAttribute("aria-expanded", "true");
+    }
+  });
 });

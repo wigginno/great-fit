@@ -4,9 +4,14 @@
  */
 
 document.addEventListener("DOMContentLoaded", function () {
-  // Load initial data
+  // Hide saved jobs section initially
+  const savedJobsSection = document.getElementById("savedJobsSection");
+  if (savedJobsSection) {
+    savedJobsSection.classList.add("hidden");
+  }
+
+  // Initially we don't have profile - loadProfile will reveal sections when appropriate
   loadProfile();
-  loadJobs();
 
   // Set up event listeners for form submissions
   setupEventListeners();
@@ -14,33 +19,22 @@ document.addEventListener("DOMContentLoaded", function () {
   // Initialize the file upload functionality
   initializeFileUpload();
 
-  // Connect to SSE for real-time job updates (assuming user ID 1 for now)
-  connectToSSE(1);
+  // Connect to SSE for real-time job updates
+  connectToSSE(window.currentUserId);
 });
 
-// Toast notification system
-function showToast(message, type = 'success') {
-  // Create toast container if it doesn't exist
-  let toastContainer = document.getElementById('toast-container');
-  if (!toastContainer) {
-    toastContainer = document.createElement('div');
-    toastContainer.id = 'toast-container';
-    document.body.appendChild(toastContainer);
-  }
+// Provide a global showToast helper early so other modules can use it before ui.js loads.
+// Once ui.js is parsed it will overwrite this with the full Alpine-powered version.
+if (!window.showToast) {
+  window.showToast = function (message, type = 'info', duration = 4000) {
+    document.dispatchEvent(
+      new CustomEvent('toast', { detail: { message, type, duration } })
+    );
+  };
+}
 
-  // Create toast element
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.textContent = message;
-  
-  // Add to container
-  toastContainer.appendChild(toast);
-  
-  // Remove after animation
-  setTimeout(() => {
-    toast.classList.add('fade-out');
-    setTimeout(() => {
-      toast.remove();
-    }, 500);
-  }, 3000);
+// Expose current user id globally so other modules can read a single source of truth
+// In production this should be injected server‑side.
+if (window.currentUserId === undefined) {
+  window.currentUserId = 1;
 }

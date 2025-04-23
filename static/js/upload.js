@@ -9,13 +9,14 @@ async function uploadResumeFile() {
   const fileInput = document.getElementById("resumeFile");
   const file = fileInput.files[0];
   const uploadStatusElement = document.getElementById("uploadStatus");
+  const uploadContent = document.getElementById("uploadContent");
+  const uploadSpinner = document.getElementById("uploadSpinner");
   const uploadArea = document.getElementById("uploadArea");
   const resumeUploadContainer = document.getElementById("resumeUploadContainer");
-  const resetProfileContainer = document.getElementById("resetProfileContainer");
-  const userProfileContainer = document.getElementById("userProfile");
+  const resetProfileContainer = document.getElementById("profileActions");
 
   if (!file) {
-    uploadStatusElement.innerHTML = '<div class="alert alert-warning">Please select a file to upload.</div>';
+    showToast('Please select a file to upload.', 'warning');
     return;
   }
 
@@ -23,21 +24,23 @@ async function uploadResumeFile() {
   const allowedTypes = [".pdf", ".docx", ".doc", ".txt"];
   const fileExtension = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
   if (!allowedTypes.includes(fileExtension)) {
-    uploadStatusElement.innerHTML = '<div class="alert alert-danger">Invalid file type. Please upload a PDF, Word, or TXT file.</div>';
+    showToast('Invalid file type. Please upload a PDF, Word, or TXT file.', 'error');
     return;
   }
 
   try {
-    // Hide the upload area during processing
+    // Show spinner, hide original content
     if (uploadArea) {
-      uploadArea.style.display = "none";
+      if (uploadContent) uploadContent.classList.add("hidden");
+      if (uploadSpinner) uploadSpinner.classList.remove("hidden");
+      uploadArea.classList.remove("hover:border-indigo-600", "hover:bg-indigo-100"); // Disable hover effect during processing
     }
-    
-    // Show loading status
-    uploadStatusElement.innerHTML = '<div class="alert alert-info">Processing resume... <div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+    if (uploadStatusElement) {
+      uploadStatusElement.textContent = ''; // Clear previous status text
+    }
 
-    // For now, hardcode user ID to 1
-    const userId = 1;
+    // Use global currentUserId
+    const userId = window.currentUserId;
 
     // Create form data
     const formData = new FormData();
@@ -57,6 +60,7 @@ async function uploadResumeFile() {
 
     const data = await response.json();
     console.log("Resume processed successfully:", data);
+    showToast('Resume processed successfully!', 'success');
 
     // Hide upload container, show reset button
     if (resumeUploadContainer) {
@@ -66,23 +70,20 @@ async function uploadResumeFile() {
       resetProfileContainer.style.display = "block";
     }
 
-    // Clear any previous profile and show loading message
-    if (userProfileContainer) {
-      userProfileContainer.innerHTML = '<p class="loading">Loading profile...</p>';
-    }
-
     // Fetch and display the profile
     await loadProfile();
   } catch (error) {
     console.error("Error uploading resume:", error);
-    
+
     // Restore the upload area
     if (uploadArea) {
-      uploadArea.style.display = "block";
+      if (uploadContent) uploadContent.classList.remove("hidden");
+      if (uploadSpinner) uploadSpinner.classList.add("hidden");
+      uploadArea.classList.add("hover:border-indigo-600", "hover:bg-indigo-100"); // Re-enable hover effect
     }
-    
+
     // Show error message
-    uploadStatusElement.innerHTML = `<div class="alert alert-danger">Error processing resume: ${error.message}</div>`;
+    showToast(`Error processing resume: ${error.message}`, 'error');
   }
 }
 
@@ -91,6 +92,8 @@ function resetFileUpload() {
   const fileInput = document.getElementById("resumeFile");
   const uploadStatusElement = document.getElementById("uploadStatus");
   const uploadArea = document.getElementById("uploadArea");
+  const uploadContent = document.getElementById("uploadContent");
+  const uploadSpinner = document.getElementById("uploadSpinner");
 
   // Clear the file input
   if (fileInput) {
@@ -104,7 +107,9 @@ function resetFileUpload() {
 
   // Restore the upload area if it was hidden
   if (uploadArea) {
-    uploadArea.style.display = "block";
+    if (uploadContent) uploadContent.classList.remove("hidden");
+    if (uploadSpinner) uploadSpinner.classList.add("hidden");
+    uploadArea.classList.add("hover:border-indigo-600", "hover:bg-indigo-100"); // Re-enable hover effect
   }
 
   // Remove any custom file name display
@@ -138,13 +143,10 @@ function initializeFileUpload() {
   // Handle file selection change
   fileInput.addEventListener("change", function() {
     const file = fileInput.files[0];
-    
+
     if (file) {
       console.log("File selected:", file.name);
-      
-      // Hide the upload area - no need to show file info
-      uploadArea.style.display = "none";
-      
+
       // Auto-process the resume immediately
       uploadResumeFile();
     }
@@ -153,17 +155,17 @@ function initializeFileUpload() {
   // Setup drag and drop
   uploadArea.addEventListener("dragover", function(e) {
     e.preventDefault();
-    uploadArea.classList.add("dragover");
+    uploadArea.classList.add("border-indigo-600", "bg-indigo-100", "ring-2", "ring-indigo-300"); // Use Tailwind classes for visual feedback
   });
 
   uploadArea.addEventListener("dragleave", function() {
-    uploadArea.classList.remove("dragover");
+    uploadArea.classList.remove("border-indigo-600", "bg-indigo-100", "ring-2", "ring-indigo-300");
   });
 
   uploadArea.addEventListener("drop", function(e) {
     e.preventDefault();
-    uploadArea.classList.remove("dragover");
-    
+    uploadArea.classList.remove("border-indigo-600", "bg-indigo-100", "ring-2", "ring-indigo-300"); // Remove styles on drop
+
     if (e.dataTransfer.files.length) {
       fileInput.files = e.dataTransfer.files;
       // Trigger the change event

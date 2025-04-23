@@ -11,7 +11,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -134,13 +134,16 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-# --- Root Endpoint --- Serve index.html using FileResponse
-@app.get("/", response_class=FileResponse)
-async def read_root():
-    index_path = "static/index.html"
-    if not os.path.exists(index_path):
-        raise HTTPException(status_code=404, detail="index.html not found")
-    return FileResponse(index_path, media_type="text/html")
+# --- Root Endpoint --- Serve index page with Jinja2 Template --- #
+@app.get("/", response_class=HTMLResponse)
+async def read_root(request: Request):
+    """Render the main index page.
+
+    Uses Jinja2 template rendering instead of serving a static file so that we
+    can progressively migrate to server‑side rendering with HTMX and Alpine.js
+    in the frontend.
+    """
+    return templates.TemplateResponse("index.html", {"request": request, "env": "dev"})
 
 
 # Add route for favicon.ico

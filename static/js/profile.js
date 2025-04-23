@@ -6,128 +6,80 @@
 // Function to load and display user profile
 async function loadProfile() {
   try {
-    // For now, hardcode user ID to 1
-    const userId = 1;
-    const profileContainer = document.getElementById("userProfile");
-    
-    if (!profileContainer) {
-      console.error("Profile container not found");
-      return;
-    }
-    
-    profileContainer.innerHTML = '<p class="loading">Loading profile...</p>';
-    
+    // Use currentUserId globally
+    const userId = window.currentUserId;
+
     const response = await fetch(`/users/${userId}/profile/`);
-    
-    if (response.status === 204) {
-      // No profile exists yet
-      profileContainer.innerHTML = '<p class="placeholder">Your profile will appear here. Upload your resume to get started.</p>';
-      return;
-    }
-    
+
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
     }
-    
+
     const responseData = await response.json();
-    
+
     // Extract profile_data from the response - this is the actual profile data
     const profileData = responseData.profile_data;
-    
-    if (!profileData || Object.keys(profileData).length === 0) {
-      profileContainer.innerHTML = '<p class="placeholder">Your profile will appear here. Upload your resume to get started.</p>';
-      return;
-    }
-    
-    // Show the reset button once we have a profile
-    const resetProfileContainer = document.getElementById("resetProfileContainer");
-    if (resetProfileContainer) {
-      resetProfileContainer.style.display = "block";
-    }
-    
+
+    // Show the profile action buttons
+    const profileActions = document.getElementById("profileActions");
+    if (profileActions) profileActions.classList.remove("hidden");
+
     // Hide the resume upload container
     const resumeUploadContainer = document.getElementById("resumeUploadContainer");
     if (resumeUploadContainer) {
       resumeUploadContainer.style.display = "none";
     }
-    
-    // Format the profile data using the profile formatter
+    // Also hide the entire upload section wrapper to remove empty space
+    const resumeUploadSection = document.getElementById("resumeUploadSection");
+    if (resumeUploadSection) resumeUploadSection.style.display = "none";
+
+    // Show Saved Jobs section
+    const savedJobsSection = document.getElementById("savedJobsSection");
+    if (savedJobsSection) {
+      savedJobsSection.classList.remove("hidden");
+      // Load jobs list once the section is visible
+      if (typeof loadJobs === "function") {
+        loadJobs();
+      }
+    }
+
+    // Format the profile data and populate modal content
     const formattedProfile = formatProfileData(profileData);
-    profileContainer.innerHTML = formattedProfile;
-    
-    // No need to add additional collapsible functionality - Bootstrap handles this
-    // The collapsible headers and content are already in the markup from profileFormatter.js
+    const profileModalContent = document.getElementById("profileModalContent");
+    if (profileModalContent) {
+      profileModalContent.innerHTML = formattedProfile;
+    }
   } catch (error) {
     console.error("Error loading profile:", error);
-    const profileContainer = document.getElementById("userProfile");
-    if (profileContainer) {
-      profileContainer.innerHTML = `<p class="error">Error loading profile: ${error.message}</p>`;
-    }
   }
 }
 
 // Function to reset the profile section to allow re-upload
 function resetProfile() {
   // Get containers
+  const profileActions = document.getElementById("profileActions");
+
+  // Hide saved jobs 
+  const savedJobsSection = document.getElementById("savedJobsSection");
+  if (savedJobsSection) savedJobsSection.classList.add("hidden");
+
+  // Hide modal if open
+  const profileModal = document.getElementById("profileModal");
+  if (profileModal) {
+    profileModal.classList.add("hidden");
+    profileModal.classList.remove("flex");
+  }
+
+  // Show upload section and hide profile actions
+  const resumeUploadSection = document.getElementById("resumeUploadSection");
+  if (resumeUploadSection) resumeUploadSection.style.display = "block";
   const resumeUploadContainer = document.getElementById("resumeUploadContainer");
-  const resetProfileContainer = document.getElementById("resetProfileContainer");
-  const profileContainer = document.getElementById("userProfile");
-  
-  // Show upload, hide reset button
-  if (resumeUploadContainer) {
-    resumeUploadContainer.style.display = "block";
-  }
-  if (resetProfileContainer) {
-    resetProfileContainer.style.display = "none";
-  }
-  
-  // Clear profile
-  if (profileContainer) {
-    profileContainer.innerHTML = '<p class="placeholder">Your profile will appear here. Upload your resume to get started.</p>';
-  }
-}
+  if (resumeUploadContainer) resumeUploadContainer.style.display = "block";
+  if (profileActions) profileActions.classList.add("hidden");
 
-// Function to expand all profile sections
-function expandAllProfileSections() {
-  const profileContainer = document.getElementById("userProfile");
-  if (!profileContainer) return;
-  
-  // Get all collapsible elements
-  const collapseElements = profileContainer.querySelectorAll('.collapse');
-  collapseElements.forEach(collapse => {
-    // Add the 'show' class directly to expand the section
-    collapse.classList.add('show');
-    
-    // Find the corresponding header and update its aria-expanded attribute
-    const headerId = collapse.getAttribute('aria-labelledby');
-    if (headerId) {
-      const header = document.getElementById(headerId);
-      if (header) {
-        header.setAttribute('aria-expanded', 'true');
-      }
-    }
-  });
-}
-
-// Function to collapse all profile sections
-function collapseAllProfileSections() {
-  const profileContainer = document.getElementById("userProfile");
-  if (!profileContainer) return;
-  
-  // Get all collapsible elements
-  const collapseElements = profileContainer.querySelectorAll('.collapse');
-  collapseElements.forEach(collapse => {
-    // Remove the 'show' class directly to collapse the section
-    collapse.classList.remove('show');
-    
-    // Find the corresponding header and update its aria-expanded attribute
-    const headerId = collapse.getAttribute('aria-labelledby');
-    if (headerId) {
-      const header = document.getElementById(headerId);
-      if (header) {
-        header.setAttribute('aria-expanded', 'false');
-      }
-    }
-  });
+  // Clear previous file input state
+  if (typeof resetFileUpload === 'function') {
+    resetFileUpload();
+  }
 }

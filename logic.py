@@ -59,7 +59,9 @@ def cache_llm_response(func):
 call_llm_for_job_ranking_cached = cache_llm_response(call_llm_for_job_ranking)
 call_llm_for_resume_tailoring_cached = cache_llm_response(call_llm_for_resume_tailoring)
 call_llm_for_resume_parsing_cached = cache_llm_response(call_llm_for_resume_parsing)
-call_llm_to_clean_job_description_cached = cache_llm_response(call_llm_to_clean_job_description)
+call_llm_to_clean_job_description_cached = cache_llm_response(
+    call_llm_to_clean_job_description
+)
 
 
 async def clean_job_description(
@@ -111,7 +113,9 @@ async def parse_resume_with_llm(resume_text: str) -> dict[str, Any]:
     Returns:
         A dictionary containing structured profile data extracted from the resume.
     """
-    parsed_data = await call_llm_for_resume_parsing(resume_text) # Call the renamed function
+    parsed_data = await call_llm_for_resume_parsing(
+        resume_text
+    )  # Call the renamed function
 
     # Map the new structure to the expected structure
     resume_data = {}
@@ -158,9 +162,11 @@ async def generate_tailoring_suggestions(job: models.Job, db: Session) -> str | 
 
     profile_json_string = crud.get_user_profile(db, user_id=job.user_id)
     if not profile_json_string:
-        print(f"Warning: Profile not found for user {job.user_id}. Cannot generate tailoring suggestions.")
+        print(
+            f"Warning: Profile not found for user {job.user_id}. Cannot generate tailoring suggestions."
+        )
         return None
-        
+
     # Parse the profile JSON string
     try:
         profile_data = json.loads(profile_json_string)
@@ -169,17 +175,23 @@ async def generate_tailoring_suggestions(job: models.Job, db: Session) -> str | 
         return None
 
     if not job.description:
-        print(f"Warning: Job {job.id} has no description. Cannot generate tailoring suggestions.")
+        print(
+            f"Warning: Job {job.id} has no description. Cannot generate tailoring suggestions."
+        )
         return None
 
     # Extract profile text from the JSON data
-    profile_text = json.dumps(profile_data, indent=2)  # Convert to formatted text for LLM
-    
+    profile_text = json.dumps(
+        profile_data, indent=2
+    )  # Convert to formatted text for LLM
+
     # Include ranking explanation if available to provide additional context
     ranking_context = ""
     if job.ranking_explanation:
-        ranking_context = f"\n\nAnalysis of Profile Match to Job:\n{job.ranking_explanation}"
-    
+        ranking_context = (
+            f"\n\nAnalysis of Profile Match to Job:\n{job.ranking_explanation}"
+        )
+
     response: schemas.TailoringResponse = await call_llm_for_resume_tailoring_cached(
         job_description=job.description,
         applicant_profile=profile_text + ranking_context,

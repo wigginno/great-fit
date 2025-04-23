@@ -7,7 +7,7 @@
 let eventSource = null;
 
 // Function to connect to SSE for real-time updates
-function connectToSSE(userId) {
+function connectToSSE(userId = window.currentUserId) {
   // Close any existing connection
   if (eventSource) {
     eventSource.close();
@@ -35,9 +35,10 @@ function connectToSSE(userId) {
   eventSource.addEventListener("job_created", function(event) {
     const eventData = JSON.parse(event.data);
     console.log("SSE: Received job_created", eventData);
-    
-    // Add the new job to the list
-    addJobCardToList(eventData, true);
+    // Re-render job list for consistent styling
+    if (typeof loadJobs === 'function') {
+      loadJobs();
+    }
   });
 
   // Handle job_deleted events
@@ -66,29 +67,20 @@ function connectToSSE(userId) {
     if (jobCard) {
       // Define scoreText variable at this scope level so it's available for the toast
       let scoreText = 'Scoring job...';
-      
+
       // Update score display
       const scoreElement = jobCard.querySelector('.job-score');
       if (scoreElement) {
-        let scoreClass = 'unranked';
-        let scoreColor = '#6c757d';
-        const score = eventData.score;
-
-        if (score !== null && score !== undefined) {
-          scoreText = score.toFixed(1);
-          if (score >= 8.0) {
-            scoreClass = 'high'; scoreColor = '#198754';
-          } else if (score >= 5.0) {
-            scoreClass = 'medium'; scoreColor = '#ffc107';
-          } else {
-            scoreClass = 'low'; scoreColor = '#dc3545';
-          }
+        if (eventData.score !== null && eventData.score !== undefined) {
+          scoreText = eventData.score.toFixed(1);
+          const clamped = Math.max(0, Math.min(10, eventData.score));
+          const hue = (clamped / 10) * 120;
+          scoreElement.style.backgroundColor = `hsl(${hue}, 90%, 45%)`;
         } else {
-           scoreText = 'Rank Failed'; scoreClass = 'low'; scoreColor = '#dc3545';
+          scoreText = 'Rank Failed';
+          scoreElement.style.backgroundColor = `hsl(0, 90%, 45%)`;
         }
         scoreElement.textContent = scoreText;
-        scoreElement.className = `job-score score-${scoreClass}`; // Update class
-        scoreElement.style.backgroundColor = scoreColor;
         scoreElement.style.color = 'white';
         scoreElement.style.padding = '0.2rem 0.5rem';
         scoreElement.style.borderRadius = '0.25rem';
@@ -155,60 +147,4 @@ function connectToSSE(userId) {
   });
 }
 
-// Helper function to add a new job card to the list
-function addJobCardToList(job, prepend = false) {
-  const jobsContainer = document.getElementById("jobsList");
-  if (!jobsContainer) return;
-  
-  // If currently showing placeholder, clear it
-  if (jobsContainer.querySelector('.placeholder')) {
-    jobsContainer.innerHTML = '<div class="jobs-list"></div>';
-  }
-  
-  const jobsList = jobsContainer.querySelector('.jobs-list');
-  if (!jobsList) return;
-  
-  // Create card element
-  const jobCard = document.createElement('div');
-  jobCard.className = 'job-card';
-  jobCard.setAttribute('data-job-id', job.id);
-  jobCard.id = `job-card-${job.id}`;
-  
-  // Structure matches the createJobCardHtml function
-  jobCard.innerHTML = `
-    <div class="job-title">${job.title || "Untitled Job"}</div>
-    <div class="job-company">${job.company || "Unknown Company"}</div>
-    ${
-      job.ranking_score !== null && job.ranking_score !== undefined
-        ? `<div class="job-score">Match: ${job.ranking_score.toFixed(1)}/10</div>`
-        : '<div class="job-score unranked">Scoring job...</div>'
-    }
-  `;
-  
-  // Add to the beginning or end of the list
-  if (prepend) {
-    jobsList.insertBefore(jobCard, jobsList.firstChild);
-  } else {
-    jobsList.appendChild(jobCard);
-  }
-  
-  // Style the score element
-  const scoreElement = jobCard.querySelector('.job-score');
-  if (scoreElement) {
-    if (job.ranking_score !== null && job.ranking_score !== undefined) {
-      // Map score 0-10 to hue 0-120 (Red to Green)
-      const score = Math.max(0, Math.min(10, job.ranking_score)); // Clamp score
-      const hue = (score / 10) * 120;
-      scoreElement.style.backgroundColor = `hsl(${hue}, 90%, 45%)`;
-    } else {
-      scoreElement.style.backgroundColor = '#6c757d'; // Grey for unranked
-    }
-    scoreElement.style.color = 'white';
-    scoreElement.style.padding = '0.1rem 0.4rem';
-    scoreElement.style.borderRadius = '0.25rem';
-    scoreElement.style.display = 'inline-block';
-  }
-  
-  // Show toast notification
-  showToast(`New job added: ${job.title || "Untitled Job"}`);
-}
+// addJobCardToList removed – list is always refreshed via loadJobs()
