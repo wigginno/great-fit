@@ -109,10 +109,7 @@ function connectToSSE(userId = window.currentUserId) {
   eventSource.addEventListener("job_tailored", function(event) {
     const eventData = JSON.parse(event.data);
     console.log("SSE: Received job_tailored", eventData);
-    // Persist tailoring suggestions for reload
-    if (eventData.suggestions !== undefined) {
-      localStorage.setItem(`job_tailored_suggestions_${eventData.job_id}`, eventData.suggestions);
-    }
+    // No client persistence; always rely on server data
     // Update details container if present
     const tailoringDetailsContainer = document.getElementById(`tailoring-suggestions-${eventData.job_id}`);
     if (tailoringDetailsContainer) {

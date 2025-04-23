@@ -250,20 +250,6 @@ async function showJobDetails(jobId, userId) {
 
     const job = await response.json();
 
-    // Load persisted ranking and suggestions for reload fallback
-    const storedScore = localStorage.getItem(`job_ranked_score_${jobId}`);
-    if (job.ranking_score == null && storedScore != null) {
-      job.ranking_score = parseFloat(storedScore);
-    }
-    const storedExplanation = localStorage.getItem(`job_ranked_explanation_${jobId}`);
-    if ((job.ranking_explanation == null || job.ranking_explanation === '') && storedExplanation) {
-      job.ranking_explanation = storedExplanation;
-    }
-    const storedSuggestions = localStorage.getItem(`job_tailored_suggestions_${jobId}`);
-    if ((job.tailoring_suggestions == null || job.tailoring_suggestions === '') && storedSuggestions) {
-      job.tailoring_suggestions = storedSuggestions;
-    }
-
     // Format job description with markdown parser if available
     let formattedDescription = job.description || '';
     if (window.marked && formattedDescription) {
@@ -371,16 +357,6 @@ async function showJobDetails(jobId, userId) {
 
     // Render HTML
     jobDetailsContainer.innerHTML = jobHTML;
-
-    // Immediately insert persisted tailoring suggestions after HTML build
-    const storedSuggestions2 = localStorage.getItem(`job_tailored_suggestions_${jobId}`);
-    if (storedSuggestions2) {
-      const suggContainer = document.getElementById(`tailoring-suggestions-${jobId}`);
-      if (suggContainer) {
-        const parsed = window.marked ? marked.parse(storedSuggestions2) : storedSuggestions2.replace(/\n/g, '<br>');
-        suggContainer.innerHTML = `<div class="tailoring-suggestions-content">${parsed}</div>`;
-      }
-    }
   } catch (error) {
     console.error(`Error showing job details:`, error);
     const jobDetailsContainer = document.getElementById("jobDetails");

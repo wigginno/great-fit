@@ -9,8 +9,8 @@ A full-stack web app that leverages LLMs to analyse your resume, evaluate job po
 | Area | Capability |
 |------|------------|
 | Resume | • Upload PDF/DOC/TXT and extract structured profile <br>• View profile in collapsible UI sections |
-| Jobs | • Add jobs via modal, live validation <br>• View, select, delete jobs <br>• Server-Side Events (SSE) stream real-time ranking/tailoring results |
-| Analysis | • Match scoring (0-10) + colour scale <br>• Detailed LLM explanation <br>• Tailoring suggestions persisted to **localStorage** so they survive refreshes |
+| Jobs | • Add jobs via modal, live validation <br>• View, select, delete jobs <br>• Server-Side Events (SSE) stream real-time job scoring/tailoring results |
+| Analysis | • Match scoring (0-10) + colour scale <br>• Detailed LLM explanation |
 | UX | • Tailwind-styled responsive UI <br>• Alpine-powered toast notifications <br>• Keyboard-friendly modal workflow |
 
 ---
