@@ -22,9 +22,9 @@ A full-stack web app that leverages LLMs to analyse your resume, evaluate job po
 | Backend | **Python 3.11** · **FastAPI** · SQLModel/SQLAlchemy · SQLite |
 | LLM | [`openai`](https://github.com/openai/openai-python) client via **OpenRouter** API + [`instructor`](https://github.com/jxnl/instructor) for structured output |
 | Realtime | SSE endpoint (`/sse/{user_id}`) |
-| Frontend | **Tailwind CSS 4** (CLI build) · **Alpine.js v3** · **HTMX 1.9** · **Marked.js** |
-| Tooling | Node ≥ 18, npm scripts (`npm run dev / build`) |
-| Tests | `pytest`, `httpx`, `pytest-asyncio` |
+| Frontend | **Tailwind CSS 4** (CLI build) · **Alpine.js** · **HTMX** |
+| Tooling | Node, npm scripts (`npm run dev / build`) |
+| Tests | `pytest` |
 
 ---
 
@@ -38,7 +38,7 @@ A full-stack web app that leverages LLMs to analyse your resume, evaluate job po
 ├── templates/               # Jinja2 templates (served by FastAPI)
 │   └── base.html            # Loads Tailwind CSS + JS bundles
 ├── static/
-│   ├── css/                 # ⚠️ Compiled Tailwind CSS (ignored in git)
+│   ├── css/                 # Compiled Tailwind CSS
 │   ├── js/                  # Front-end modules (events.js, jobs.js, …)
 │   └── profileFormatter.js  # Renders profile collapsibles
 ├── src/
