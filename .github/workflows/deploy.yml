@@ -2,7 +2,7 @@ name: CI / CD
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "ci-cd-pipeline" ]
 
 permissions:
   id-token: write  # allow GitHub OIDC to assume AWS role
@@ -28,6 +28,11 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Ensure ECR repository exists
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} || \
+            aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }}
 
       - name: Extract Docker metadata
         id: meta
