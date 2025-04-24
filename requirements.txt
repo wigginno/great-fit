@@ -16,6 +16,11 @@ PyMuPDF
 python-docx
 aiofiles
 
+# Monitoring
+aws-xray-sdk
+aws-embedded-metrics
+json-log-formatter
+
 # Testing
 pytest
 httpx
