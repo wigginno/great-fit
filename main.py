@@ -23,6 +23,7 @@ from fastapi import status
 import fitz
 from docx import Document
 import logging
+from observability import init_observability
 import asyncio
 from sse_starlette.sse import EventSourceResponse
 import openai
@@ -32,6 +33,9 @@ import schemas
 import crud
 import logic
 from database import SessionLocal, create_db_and_tables, get_db
+
+# Initialise observability before creating app
+init_observability()
 
 # Create DB tables on startup
 create_db_and_tables()
