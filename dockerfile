@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y nodejs npm \
 
 # Copy app source and build assets
 COPY . .
-RUN tailwindcss -i src/index.css -o static/css/tailwind.css --minify
+RUN npm install tailwindcss@latest && \
+    npx tailwindcss -i src/index.css -o static/css/tailwind.css --minify
 ENV PYTHONUNBUFFERED=1
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
