@@ -103,6 +103,13 @@ class GreatFitInfraStack(Stack):
         )
         db_secret.grant_read(instance_role)
         openrouter_secret.grant_read(instance_role)
+        # Grant App Runner permissions to pull from ECR & read secrets
+        instance_role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name("AWSAppRunnerServicePolicyForECRAccess")
+        )
+        instance_role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name("AWSAppRunnerServicePolicyForSecretsManagerAccess")
+        )
 
         # DATABASE_URL using dynamic reference to password secret
         db_password = db_secret.secret_value_from_json("password").to_string()
@@ -113,6 +120,9 @@ class GreatFitInfraStack(Stack):
         apprunner_service = apprunner.CfnService(
             self,
             "GreatFitAppRunner",
+            authentication_configuration={
+                "accessRoleArn": instance_role.role_arn
+            },
             source_configuration={
                 "autoDeploymentsEnabled": True,
                 "imageRepository": {
