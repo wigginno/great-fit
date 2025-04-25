@@ -12,6 +12,8 @@ from aws_cdk import (
     aws_sns as sns,
     aws_sns_subscriptions as subs,
     aws_ecr as ecr,
+    aws_iam as iam,
+    aws_apprunner as apprunner,
 )
 from constructs import Construct
 import os
@@ -83,10 +85,64 @@ class GreatFitInfraStack(Stack):
         # --- Container Repository --- #
         ecr_repo = ecr.Repository(self, "AppRepository", repository_name="great-fit")
 
+        # --- App Runner Service --- #
+
+        # Secret holding external API key (must exist beforehand)
+        openrouter_secret_name = os.getenv("OPENROUTER_SECRET_NAME", "OPENROUTER_API_KEY")
+        openrouter_secret = sm.Secret.from_secret_name_v2(
+            self, "OpenRouterSecret", openrouter_secret_name
+        )
+
+        # Instance role to allow reading secrets
+        instance_role = iam.Role(
+            self,
+            "AppRunnerInstanceRole",
+            assumed_by=iam.ServicePrincipal("tasks.apprunner.amazonaws.com"),
+        )
+        db_secret.grant_read(instance_role)
+        openrouter_secret.grant_read(instance_role)
+
+        # DATABASE_URL using dynamic reference to password secret
+        db_password = db_secret.secret_value_from_json("password").to_string()
+        database_url = (
+            f"postgresql://gfadmin:{db_password}@{cluster.cluster_endpoint.hostname}:5432/greatfit"
+        )
+
+        apprunner_service = apprunner.CfnService(
+            self,
+            "GreatFitAppRunner",
+            source_configuration={
+                "autoDeploymentsEnabled": True,
+                "imageRepository": {
+                    "imageIdentifier": f"{ecr_repo.repository_uri}:latest",
+                    "imageRepositoryType": "ECR",
+                    "imageConfiguration": {
+                        "port": "8000",
+                        "runtimeEnvironmentVariables": [
+                            {"name": "DATABASE_URL", "value": database_url},
+                            {"name": "IMAGE_URI", "value": f"{ecr_repo.repository_uri}:latest"},
+                        ],
+                        "runtimeEnvironmentSecrets": [
+                            {
+                                "name": "OPENROUTER_API_KEY",
+                                "value": openrouter_secret.secret_arn,
+                            }
+                        ],
+                    },
+                },
+            },
+            instance_configuration={
+                "cpu": "1024",
+                "memory": "2048",
+                "instanceRoleArn": instance_role.role_arn,
+            },
+        )
+
         # Outputs
         CfnOutput(self, "DbEndpoint", value=cluster.cluster_endpoint.hostname)
         CfnOutput(self, "DbSecretArn", value=db_secret.secret_arn)
         CfnOutput(self, "EcrRepoUri", value=ecr_repo.repository_uri)
+        CfnOutput(self, "AppRunnerUrl", value=apprunner_service.attr_service_url)
 
         # --- Monitoring & Alarms --- #
         # SNS topic for alarm notifications (add your email via env var ALERT_EMAIL or manually)
