@@ -82,8 +82,10 @@ class GreatFitInfraStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
         )
 
-        # --- Container Repository --- #
-        ecr_repo = ecr.Repository(self, "AppRepository", repository_name="great-fit")
+        # --- Container Repository (import existing or ensure via workflow) --- #
+        ecr_repo = ecr.Repository.from_repository_name(
+            self, "AppRepository", repository_name="great-fit"
+        )
 
         # --- App Runner Service --- #
 
