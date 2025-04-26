@@ -123,15 +123,17 @@ class GreatFitInfraStack(Stack):
             source=apprunner.Source.from_ecr(
                 repository=ecr_repo,
                 tag_or_digest="latest",
-                image_configuration=apprunner.ImageConfiguration(port=8000),
+                image_configuration=apprunner.ImageConfiguration(
+                    port=8000,
+                    environment_variables={
+                        "DATABASE_URL": database_url,
+                        "IMAGE_URI": f"{ecr_repo.repository_uri}:latest",
+                    },
+                    environment_secrets={
+                        "OPENROUTER_API_KEY": apprunner.Secret.from_secrets_manager(openrouter_secret)
+                    },
+                ),
             ),
-            environment={
-                "DATABASE_URL": database_url,
-                "IMAGE_URI": f"{ecr_repo.repository_uri}:latest",
-            },
-            secrets={
-                "OPENROUTER_API_KEY": apprunner.Secret.from_secrets_manager(openrouter_secret)
-            },
             cpu=apprunner.Cpu.ONE_VCPU,
             memory=apprunner.Memory.TWO_GB,
             instance_role=instance_role,
