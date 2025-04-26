@@ -33,6 +33,7 @@ import schemas
 import crud
 import logic
 from database import SessionLocal, create_db_and_tables, get_db
+from auth import get_current_user
 
 # Initialise observability before creating app
 init_observability()
