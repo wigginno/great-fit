@@ -123,8 +123,7 @@ class GreatFitInfraStack(Stack):
             source=apprunner.Source.from_ecr(
                 repository=ecr_repo,
                 tag_or_digest="latest",
-                access_role=instance_role,
-                port=8000,
+                image_configuration=apprunner.ImageConfiguration(port=8000),
             ),
             environment={
                 "DATABASE_URL": database_url,
@@ -135,6 +134,7 @@ class GreatFitInfraStack(Stack):
             },
             cpu=apprunner.Cpu.ONE_VCPU,
             memory=apprunner.Memory.TWO_GB,
+            instance_role=instance_role,
         )
 
         # Outputs
