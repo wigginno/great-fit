@@ -1,0 +1,1 @@
+Directory holds Alembic migrations. Use `alembic revision --autogenerate -m "msg"` then `alembic upgrade head`.
