@@ -110,6 +110,33 @@ class GreatFitInfraStack(Stack):
             f"postgresql://gfadmin:{db_password}@{cluster.cluster_endpoint.hostname}:5432/greatfit"
         )
 
+        # --- Networking: allow App Runner to reach RDS via VPC Connector --- #
+        # Security group for App Runner ENIs
+        apprunner_sg = ec2.SecurityGroup(
+            self,
+            "AppRunnerSG",
+            vpc=vpc,
+            description="Security group for App Runner to access RDS",
+            allow_all_outbound=True,
+        )
+
+        # Allow connections from App Runner to Postgres
+        cluster.connections.allow_from(
+            apprunner_sg,
+            ec2.Port.tcp(5432),
+            "App Runner access to Aurora Postgres"
+        )
+
+        vpc_connector = apprunner.VpcConnector(
+            self,
+            "AppVpcConnector",
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
+            ),
+            security_groups=[apprunner_sg],
+        )
+
         apprunner_service = apprunner.Service(
             self,
             "GreatFitAppRunner",
@@ -130,6 +157,7 @@ class GreatFitInfraStack(Stack):
             cpu=apprunner.Cpu.ONE_VCPU,
             memory=apprunner.Memory.TWO_GB,
             instance_role=instance_role,
+            vpc_connector=vpc_connector,
         )
 
         # Outputs
