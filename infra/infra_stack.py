@@ -89,11 +89,7 @@ class GreatFitInfraStack(Stack):
 
         # --- Container Repository --- #
         ecr_repo = ecr.Repository.from_repository_name(
-            self,
-            "AppRepository",
-            repository_name="great-fit",
-            image_scan_on_push=True,
-            removal_policy=RemovalPolicy.RETAIN,
+            self, "AppRepository", repository_name="great-fit"
         )
 
         # --- App Runner Service --- #
