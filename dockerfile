@@ -32,5 +32,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY --from=assets /work/build/tailwind.css static/css/
 COPY . .
 
-# bind to the port App Runner injects via $PORT (default 8080)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "$PORT"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
