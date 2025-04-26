@@ -29,3 +29,6 @@ pytest-env
 
 datetime
 sse-starlette
+
+# Database
+alembic

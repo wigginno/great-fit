@@ -63,3 +63,10 @@ jobs:
         run: |
           pip install -r requirements.txt
           cdk deploy --require-approval never
+
+      - name: Run database migrations (Alembic)
+        run: |
+          pip install --quiet alembic
+          alembic upgrade head
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
