@@ -74,6 +74,15 @@ def _get_jwks():
     return resp.json()
 
 
+# Exposed for non-request contexts (e.g., SSE token in query)
+def verify_token(token: str) -> TokenPayload:
+    """Verify Cognito JWT and return payload.
+
+    Raises HTTPException(401) on failure.
+    """
+    return _verify_token(token)
+
+# Kept for backwards-compat internal usage
 def _verify_token(token: str) -> TokenPayload:
     settings = _load_settings()
     jwks = _get_jwks()

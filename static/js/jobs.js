@@ -10,7 +10,7 @@ async function loadJobs() {
     const jobsContainer = document.getElementById("jobsList");
     jobsContainer.innerHTML = "Loading jobs...";
 
-    const response = await fetch(`/users/${userId}/jobs/`);
+    const response = await fetch(`/users/${userId}/jobs/`, { headers: { ...window.authHeaders() } });
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -137,6 +137,7 @@ async function saveModalJob() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...window.authHeaders(),
       },
       body: JSON.stringify(payload),
     });
@@ -241,7 +242,7 @@ async function showJobDetails(jobId, userId) {
 
     jobDetailsContainer.innerHTML = '<div class="loading-spinner-container"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
 
-    const response = await fetch(`/users/${userId}/jobs/${jobId}`);
+    const response = await fetch(`/users/${userId}/jobs/${jobId}`, { headers: { ...window.authHeaders() } });
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -371,7 +372,11 @@ async function showJobDetails(jobId, userId) {
 async function deleteJob(jobId) {
   try {
     const res = await fetch(`/users/${window.currentUserId}/jobs/${jobId}`, {
-      method: 'DELETE',
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        ...window.authHeaders(),
+      },
     });
     if (!res.ok) {
       const err = await res.json();

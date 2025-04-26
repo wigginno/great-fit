@@ -33,8 +33,4 @@ if (!window.showToast) {
   };
 }
 
-// Expose current user id globally so other modules can read a single source of truth
-// In production this should be injected server‑side.
-if (window.currentUserId === undefined) {
-  window.currentUserId = 1;
-}
+// currentUserId will be set by auth.js after fetching /users/me

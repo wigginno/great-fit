@@ -166,6 +166,13 @@ def create_user_endpoint(user: schemas.UserCreate, db: Session = Depends(get_db)
     return crud.create_user(db=db, user=user)
 
 
+# --- Authenticated current user endpoint ---
+@app.get("/users/me", response_model=schemas.User, tags=["Auth"])
+def get_me(current_user: models.User = Depends(get_current_user)):
+    """Returns the authenticated user's database record."""
+    return current_user
+
+
 # --- Helper Functions for Resume Processing ---
 async def extract_text_from_resume(file: UploadFile) -> str:
     """Extract text from various resume formats (PDF, DOCX, TXT)"""
@@ -572,12 +579,10 @@ async def save_job_from_extension(
     user_id: int,
     markdown_request: schemas.JobMarkdownRequest,
     background_tasks: BackgroundTasks,
+    current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Accepts job markdown from the extension, increments the processing count immediately,
-    schedules the full processing (cleaning, saving, ranking) in the background,
-    and returns an immediate 202 Accepted response.
-    """
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
     print(f"DEBUG: Entering save_job_from_extension for user {user_id}")
     logger.info(
         f"Endpoint: Received job markdown request from extension for user {user_id}. Scheduling background processing."
@@ -612,8 +617,13 @@ class JobRankResponse(BaseModel):
     tags=["LLM Features"],
 )
 async def rank_job_endpoint(
-    user_id: int, job_id: int, db: Session = Depends(get_db)
+    user_id: int,
+    job_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
     """Triggers LLM ranking for a specific job based on user 1's profile."""
     # user_id is now a parameter, no need to hardcode
     score, explanation = await logic.rank_job_with_llm(
@@ -658,8 +668,28 @@ async def get_tailoring_suggestions_endpoint(
 
 # --- SSE Endpoint --- #
 @app.get("/stream-jobs/{user_id}")
-async def stream_jobs(request: Request, user_id: int):
+async def stream_jobs(
+    request: Request,
+    user_id: int,
+    token: str | None = None,
+):
     """Endpoint for Server-Sent Events to stream new job updates."""
+    if token is None:
+        raise HTTPException(status_code=401, detail="Missing token for SSE")
+
+    from auth import verify_token
+
+    payload = verify_token(token)
+
+    # Validate that the token owner matches path param by looking up the user record
+    db = SessionLocal()
+    try:
+        user = crud.get_user_by_email(db, payload.email or payload.sub)
+        if not user or user.id != user_id:
+            raise HTTPException(status_code=403, detail="Token/user mismatch")
+    finally:
+        db.close()
+
     queue = await manager.connect(user_id)
 
     async def event_generator():

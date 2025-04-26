@@ -9,7 +9,7 @@ async function loadProfile() {
     // Use currentUserId globally
     const userId = window.currentUserId;
 
-    const response = await fetch(`/users/${userId}/profile/`);
+    const response = await fetch(`/users/${userId}/profile/`, { headers: { ...window.authHeaders() } });
 
     if (!response.ok) {
       const errorData = await response.json();

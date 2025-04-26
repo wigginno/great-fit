@@ -39,7 +39,7 @@ async function uploadResumeFile() {
       uploadStatusElement.textContent = ''; // Clear previous status text
     }
 
-    // Use global currentUserId
+    // Use current user id from global set by auth.js
     const userId = window.currentUserId;
 
     // Create form data
@@ -49,7 +49,8 @@ async function uploadResumeFile() {
     // Upload file
     const response = await fetch(`/users/${userId}/resume/upload`, {
       method: "POST",
-      body: formData
+      body: formData,
+      headers: { ...window.authHeaders() },
     });
 
     // Handle response
