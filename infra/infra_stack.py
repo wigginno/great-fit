@@ -107,9 +107,9 @@ class GreatFitInfraStack(Stack):
         instance_role.add_managed_policy(
             iam.ManagedPolicy.from_aws_managed_policy_name("AWSAppRunnerServicePolicyForECRAccess")
         )
-        instance_role.add_managed_policy(
-            iam.ManagedPolicy.from_aws_managed_policy_name("AWSAppRunnerServicePolicyForSecretsManagerAccess")
-        )
+        # Inline secret.grant_read() provides specific permissions; a global
+        # AWSAppRunnerServicePolicyForSecretsManagerAccess managed policy doesn't
+        # exist. Removing to avoid CREATE_FAILED.
 
         # DATABASE_URL using dynamic reference to password secret
         db_password = db_secret.secret_value_from_json("password").to_string()
