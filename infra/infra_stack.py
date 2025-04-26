@@ -142,6 +142,14 @@ class GreatFitInfraStack(Stack):
             security_groups=[apprunner_sg],
         )
 
+        obs = apprunner.CfnObservabilityConfiguration(
+            self, "Obs",
+            observability_configuration_name="gf-default",
+            trace_configuration=apprunner.CfnObservabilityConfiguration.TraceConfigurationProperty(
+                vendor="AWSXRAY"
+            )
+        )
+
         apprunner_service = apprunner.Service(
             self,
             "GreatFitAppRunner",
@@ -170,6 +178,10 @@ class GreatFitInfraStack(Stack):
             memory=apprunner.Memory.TWO_GB,
             instance_role=instance_role,
             vpc_connector=vpc_connector,
+            observability_configuration=apprunner.ServiceObservabilityConfigurationProperty(
+                observability_configuration_arn=obs.attr_observability_configuration_arn,
+                observability_enabled=True
+            )
         )
 
         # Outputs
