@@ -13,8 +13,8 @@ from aws_cdk import (
     aws_sns_subscriptions as subs,
     aws_ecr as ecr,
     aws_iam as iam,
-    aws_apprunner_alpha as apprunner,
 )
+import aws_cdk.aws_apprunner_alpha as apprunner
 from constructs import Construct
 import os
 
