@@ -13,6 +13,7 @@ from aws_cdk import (
     aws_sns_subscriptions as subs,
     aws_ecr as ecr,
     aws_iam as iam,
+    aws_cognito as cognito,
 )
 import aws_cdk.aws_apprunner_alpha as apprunner
 from constructs import Construct
@@ -59,6 +60,36 @@ class GreatFitInfraStack(Stack):
                 generate_string_key="password",
                 secret_string_template='{"username":"gfadmin"}',
             ),
+        )
+
+        # ---------------- Cognito User Pool ---------------- #
+        user_pool = cognito.UserPool(
+            self,
+            "GfUsers",
+            self_sign_up_enabled=True,
+            sign_in_aliases=cognito.SignInAliases(email=True),
+            standard_attributes=cognito.StandardAttributes(
+                email=cognito.StandardAttribute(required=True, mutable=True)
+            ),
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+
+        # App client for SPA / Hosted UI implicit flow
+        app_client = user_pool.add_client(
+            "WebClient",
+            auth_flows=cognito.AuthFlow(user_srp=True, user_password=True),
+            o_auth=cognito.OAuthSettings(
+                flows=cognito.OAuthFlows(implicit_code_grant=True),
+                scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
+                callback_urls=["https://greatfit.app/"],
+                logout_urls=["https://greatfit.app/"],
+            ),
+        )
+
+        # Hosted UI domain (https://greatfit.auth.<region>.amazoncognito.com)
+        domain = user_pool.add_domain(
+            "GfDomain",
+            cognito_domain=cognito.CognitoDomainOptions(domain_prefix="greatfit"),
         )
 
         # RDS Aurora PostgreSQL Serverless v2 cluster
@@ -108,6 +139,18 @@ class GreatFitInfraStack(Stack):
         )
         db_secret.grant_read(instance_role)
         openrouter_secret.grant_read(instance_role)
+
+        # Allow basic Cognito read actions (ListUsers for email lookup etc.)
+        instance_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=[
+                    "cognito-idp:ListUsers",
+                    "cognito-idp:GetUser",
+                ],
+                resources=[user_pool.user_pool_arn],
+            )
+        )
 
         # DATABASE_URL using dynamic reference to password secret
         db_password = db_secret.secret_value_from_json("password").to_string()
@@ -161,6 +204,9 @@ class GreatFitInfraStack(Stack):
                         "DB_PORT": "5432",
                         "DB_NAME": "greatfit",
                         "DB_USER": "gfadmin",
+                        "AWS_REGION": self.region,
+                        "COGNITO_USER_POOL_ID": user_pool.user_pool_id,
+                        "COGNITO_APP_CLIENT_ID": app_client.user_pool_client_id,
                     },
                     environment_secrets={
                         "DB_PASSWORD": apprunner.Secret.from_secrets_manager(
@@ -184,6 +230,15 @@ class GreatFitInfraStack(Stack):
         CfnOutput(self, "DbSecretArn", value=db_secret.secret_arn)
         CfnOutput(self, "EcrRepoUri", value=ecr_repo.repository_uri)
         CfnOutput(self, "AppRunnerUrl", value=apprunner_service.service_url)
+
+        # Cognito outputs
+        CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
+        CfnOutput(self, "UserPoolClientId", value=app_client.user_pool_client_id)
+        CfnOutput(
+            self,
+            "CognitoDomainUrl",
+            value=f"https://{domain.domain_name}.auth.{self.region}.amazoncognito.com",
+        )
 
         # --- Monitoring & Alarms --- #
         # SNS topic for alarm notifications (add your email via env var ALERT_EMAIL or manually)
