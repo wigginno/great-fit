@@ -32,3 +32,4 @@ sse-starlette
 
 # Database
 alembic
+psycopg2-binary>=2.9
