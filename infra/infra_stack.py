@@ -142,10 +142,10 @@ class GreatFitInfraStack(Stack):
             security_groups=[apprunner_sg],
         )
 
-        obs = apprunner.ObservabilityConfiguration(
+        obs_cfg = apprunner.ObservabilityConfiguration(
             self, "Obs",
             observability_configuration_name="gf-default",
-            trace_configuration_vendor=apprunner.TraceConfigurationVendor.AWSXRAY
+            trace_configuration_vendor=apprunner.TraceConfigurationVendor.AWSXRAY,
         )
 
         apprunner_service = apprunner.Service(
@@ -155,7 +155,7 @@ class GreatFitInfraStack(Stack):
                 repository=ecr_repo,
                 tag_or_digest="latest",
                 image_configuration=apprunner.ImageConfiguration(
-                    port=8000,
+                    port=8080,
                     environment_variables={
                         "DB_HOST": cluster.cluster_endpoint.hostname,
                         "DB_PORT": "5432",
@@ -176,10 +176,7 @@ class GreatFitInfraStack(Stack):
             memory=apprunner.Memory.TWO_GB,
             instance_role=instance_role,
             vpc_connector=vpc_connector,
-            observability_configuration=apprunner.ServiceObservabilityConfigurationProperty(
-                observability_configuration_arn=obs.attr_observability_configuration_arn,
-                observability_enabled=True
-            )
+            observability_configuration=obs_cfg
         )
 
         # Outputs
