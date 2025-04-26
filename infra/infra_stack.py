@@ -12,7 +12,9 @@ from aws_cdk import (
     aws_sns as sns,
     aws_sns_subscriptions as subs,
     aws_ecr as ecr,
+    aws_iam as iam,
 )
+import aws_cdk.aws_apprunner_alpha as apprunner
 from constructs import Construct
 import os
 
@@ -25,18 +27,23 @@ class GreatFitInfraStack(Stack):
 
         # VPC across 2 AZs with public + isolated subnets
         vpc = ec2.Vpc(
-            self,
-            "GreatFitVpc",
+            self, "GreatFitVpc",
             max_azs=2,
+            nat_gateways=1,                    # shared NAT
             subnet_configuration=[
-                ec2.SubnetConfiguration(
+                ec2.SubnetConfiguration(       # 10.0.0.0/24 & 10.0.1.0/24
                     name="public",
                     subnet_type=ec2.SubnetType.PUBLIC,
                     cidr_mask=24,
                 ),
-                ec2.SubnetConfiguration(
+                ec2.SubnetConfiguration(       # 10.0.2.0/24 & 10.0.3.0/24
                     name="isolated",
                     subnet_type=ec2.SubnetType.PRIVATE_ISOLATED,
+                    cidr_mask=24,
+                ),
+                ec2.SubnetConfiguration(       # 10.0.4.0/24 & 10.0.5.0/24
+                    name="private-egress",
+                    subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
                     cidr_mask=24,
                 ),
             ],
@@ -81,12 +88,102 @@ class GreatFitInfraStack(Stack):
         )
 
         # --- Container Repository --- #
-        ecr_repo = ecr.Repository(self, "AppRepository", repository_name="great-fit")
+        ecr_repo = ecr.Repository.from_repository_name(
+            self, "AppRepository", repository_name="great-fit"
+        )
+
+        # --- App Runner Service --- #
+
+        # Secret holding external API key (must exist beforehand)
+        openrouter_secret_name = os.getenv("OPENROUTER_SECRET_NAME", "OPENROUTER_API_KEY")
+        openrouter_secret = sm.Secret.from_secret_name_v2(
+            self, "OpenRouterSecret", openrouter_secret_name
+        )
+
+        # Instance role to allow reading secrets
+        instance_role = iam.Role(
+            self,
+            "AppRunnerInstanceRole",
+            assumed_by=iam.ServicePrincipal("tasks.apprunner.amazonaws.com"),
+        )
+        db_secret.grant_read(instance_role)
+        openrouter_secret.grant_read(instance_role)
+
+        # DATABASE_URL using dynamic reference to password secret
+        db_password = db_secret.secret_value_from_json("password").to_string()
+        database_url = (
+            f"postgresql://gfadmin:{db_password}@{cluster.cluster_endpoint.hostname}:5432/greatfit"
+        )
+
+        # --- Networking: allow App Runner to reach RDS via VPC Connector --- #
+        # Security group for App Runner ENIs
+        apprunner_sg = ec2.SecurityGroup(
+            self,
+            "AppRunnerSG",
+            vpc=vpc,
+            description="Security group for App Runner to access RDS",
+            allow_all_outbound=True,
+        )
+
+        # Allow connections from App Runner to Postgres
+        cluster.connections.allow_from(
+            apprunner_sg,
+            ec2.Port.tcp(5432),
+            "App Runner access to Aurora Postgres"
+        )
+
+        vpc_connector = apprunner.VpcConnector(
+            self,
+            "AppVpcConnector",
+            vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_group_name="private-egress"
+            ),
+            security_groups=[apprunner_sg],
+        )
+
+        obs_cfg = apprunner.ObservabilityConfiguration(
+            self, "Obs",
+            observability_configuration_name="gf-default",
+            trace_configuration_vendor=apprunner.TraceConfigurationVendor.AWSXRAY,
+        )
+
+        apprunner_service = apprunner.Service(
+            self,
+            "GreatFitAppRunner",
+            source=apprunner.Source.from_ecr(
+                repository=ecr_repo,
+                tag_or_digest="latest",
+                image_configuration=apprunner.ImageConfiguration(
+                    port=8080,
+                    environment_variables={
+                        "DB_HOST": cluster.cluster_endpoint.hostname,
+                        "DB_PORT": "5432",
+                        "DB_NAME": "greatfit",
+                        "DB_USER": "gfadmin",
+                    },
+                    environment_secrets={
+                        "DB_PASSWORD": apprunner.Secret.from_secrets_manager(
+                            db_secret, field="password"
+                        ),
+                        "OPENROUTER_API_KEY": apprunner.Secret.from_secrets_manager(
+                            openrouter_secret
+                        ),
+                    },
+                ),
+            ),
+            cpu=apprunner.Cpu.ONE_VCPU,
+            memory=apprunner.Memory.TWO_GB,
+            instance_role=instance_role,
+            vpc_connector=vpc_connector,
+            observability_configuration=obs_cfg
+        )
 
         # Outputs
         CfnOutput(self, "DbEndpoint", value=cluster.cluster_endpoint.hostname)
         CfnOutput(self, "DbSecretArn", value=db_secret.secret_arn)
         CfnOutput(self, "EcrRepoUri", value=ecr_repo.repository_uri)
+        CfnOutput(self, "AppRunnerUrl", value=apprunner_service.service_url)
 
         # --- Monitoring & Alarms --- #
         # SNS topic for alarm notifications (add your email via env var ALERT_EMAIL or manually)
