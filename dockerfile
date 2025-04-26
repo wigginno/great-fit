@@ -1,13 +1,15 @@
-#####  assets build  ###########################################################
+# syntax=docker/dockerfile:1
+ARG TARGETARCH
 FROM node:20-slim AS assets
 WORKDIR /work
-ADD https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-arm64 \
+
+ADD https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-${TARGETARCH} \
     /usr/local/bin/tailwindcss
 RUN chmod +x /usr/local/bin/tailwindcss
+
 COPY src/index.css src/index.css
 RUN tailwindcss -i src/index.css -o build/tailwind.css --minify
 
-#####  runtime  ################################################################
 FROM python:3.11-slim
 
 # system libs for psycopg2 and TLS
