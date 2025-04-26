@@ -1,10 +1,16 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM node:20-slim AS assets
+FROM node:20-slim AS assets
 ARG TARGETARCH
 WORKDIR /work
-RUN if [ "$TARGETARCH" = "amd64" ]; then TAIL_ARCH=x64; else TAIL_ARCH=arm64; fi
-ADD https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-${TAIL_ARCH} /usr/local/bin/tailwindcss
-RUN chmod +x /usr/local/bin/tailwindcss
+
+RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+RUN if [ "$TARGETARCH" = "amd64" ]; then TAIL_ARCH=x64; \
+    elif [ "$TARGETARCH" = "arm64" ]; then TAIL_ARCH=arm64; \
+    else echo "unsupported arch $TARGETARCH" && exit 1; fi && \
+    curl -fsSL -o /usr/local/bin/tailwindcss \
+      "https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-${TAIL_ARCH}" && \
+    chmod +x /usr/local/bin/tailwindcss
 
 COPY src/index.css src/index.css
 RUN tailwindcss -i src/index.css -o build/tailwind.css --minify
