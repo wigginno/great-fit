@@ -221,12 +221,13 @@ async def extract_text_from_resume(file: UploadFile) -> str:
     tags=["User Profile"],
 )
 def create_or_update_profile_endpoint(
-    user_id: int, profile: schemas.UserProfileCreate, db: Session = Depends(get_db)
+    user_id: int,
+    profile: schemas.UserProfileCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    if user_id != 1:
-        raise HTTPException(
-            status_code=403, detail="Operation not permitted for this user"
-        )
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
 
     # Check if the user exists in the database
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -255,14 +256,13 @@ def create_or_update_profile_endpoint(
 
 @app.post("/users/{user_id}/resume/upload", tags=["User Profile"])
 async def upload_resume_endpoint(
-    user_id: int, resume: UploadFile = File(...), db: Session = Depends(get_db)
+    user_id: int,
+    resume: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Upload and parse a resume to create user profile"""
-
-    if user_id != 1:
-        raise HTTPException(
-            status_code=403, detail="Operation not permitted for this user"
-        )
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
 
     # Extract text from the resume file
     resume_text = await extract_text_from_resume(resume)
@@ -297,12 +297,14 @@ async def upload_resume_endpoint(
     return JSONResponse(content=response_data)
 
 
-@app.get("/users/{user_id}/profile/", tags=["User Profile"])
-def get_profile_endpoint(user_id: int, db: Session = Depends(get_db)):
-    if user_id != 1:
-        raise HTTPException(
-            status_code=403, detail="Operation not permitted for this user"
-        )
+@app.get("/users/{user_id}/profile/", response_model=schemas.UserProfile, tags=["User Profile"])
+def get_profile_endpoint(
+    user_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
 
     # Check if user exists first
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -332,17 +334,24 @@ def get_profile_endpoint(user_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/users/{user_id}/jobs/", response_model=List[schemas.Job], tags=["Jobs"])
-def get_jobs_endpoint(user_id: int, db: Session = Depends(get_db)):
-    if user_id != 1:
-        raise HTTPException(
-            status_code=403, detail="Operation not permitted for this user"
-        )
+def get_jobs_endpoint(
+    user_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
     jobs = crud.get_jobs_for_user(db=db, user_id=user_id)
     return jobs
 
 
 @app.get("/users/{user_id}/jobs/{job_id}", response_model=schemas.Job, tags=["Jobs"])
-def get_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
+def get_job_endpoint(
+    user_id: int,
+    job_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Get a specific job by ID for a user
     """
@@ -370,9 +379,10 @@ def get_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
 async def delete_job_endpoint(
     user_id: int,
     job_id: int,
+    current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if user_id != 1:  # keep existing auth guard
+    if user_id != current_user.id:  # keep existing auth guard
         raise HTTPException(
             status_code=403, detail="Operation not permitted for this user"
         )
@@ -601,7 +611,9 @@ class JobRankResponse(BaseModel):
     response_model=JobRankResponse,
     tags=["LLM Features"],
 )
-async def rank_job_endpoint(user_id: int, job_id: int, db: Session = Depends(get_db)):
+async def rank_job_endpoint(
+    user_id: int, job_id: int, db: Session = Depends(get_db)
+):
     """Triggers LLM ranking for a specific job based on user 1's profile."""
     # user_id is now a parameter, no need to hardcode
     score, explanation = await logic.rank_job_with_llm(
