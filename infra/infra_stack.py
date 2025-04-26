@@ -142,12 +142,10 @@ class GreatFitInfraStack(Stack):
             security_groups=[apprunner_sg],
         )
 
-        obs = apprunner.CfnObservabilityConfiguration(
+        obs = apprunner.ObservabilityConfiguration(
             self, "Obs",
             observability_configuration_name="gf-default",
-            trace_configuration=apprunner.CfnObservabilityConfiguration.TraceConfigurationProperty(
-                vendor="AWSXRAY"
-            )
+            trace_configuration_vendor=apprunner.TraceConfigurationVendor.AWSXRAY
         )
 
         apprunner_service = apprunner.Service(
