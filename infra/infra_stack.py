@@ -117,44 +117,31 @@ class GreatFitInfraStack(Stack):
             f"postgresql://gfadmin:{db_password}@{cluster.cluster_endpoint.hostname}:5432/greatfit"
         )
 
-        apprunner_service = apprunner.CfnService(
+        apprunner_service = apprunner.Service(
             self,
             "GreatFitAppRunner",
-            authentication_configuration={
-                "accessRoleArn": instance_role.role_arn
+            source=apprunner.Source.from_ecr(
+                repository=ecr_repo,
+                tag_or_digest="latest",
+                access_role=instance_role,
+                port=8000,
+            ),
+            environment={
+                "DATABASE_URL": database_url,
+                "IMAGE_URI": f"{ecr_repo.repository_uri}:latest",
             },
-            source_configuration={
-                "autoDeploymentsEnabled": True,
-                "imageRepository": {
-                    "imageIdentifier": f"{ecr_repo.repository_uri}:latest",
-                    "imageRepositoryType": "ECR",
-                    "imageConfiguration": {
-                        "port": "8000",
-                        "runtimeEnvironmentVariables": [
-                            {"name": "DATABASE_URL", "value": database_url},
-                            {"name": "IMAGE_URI", "value": f"{ecr_repo.repository_uri}:latest"},
-                        ],
-                        "runtimeEnvironmentSecrets": [
-                            {
-                                "name": "OPENROUTER_API_KEY",
-                                "value": openrouter_secret.secret_arn,
-                            }
-                        ],
-                    },
-                },
+            secrets={
+                "OPENROUTER_API_KEY": apprunner.Secret.from_secrets_manager(openrouter_secret)
             },
-            instance_configuration={
-                "cpu": "1024",
-                "memory": "2048",
-                "instanceRoleArn": instance_role.role_arn,
-            },
+            cpu=apprunner.Cpu.ONE_VCPU,
+            memory=apprunner.Memory.TWO_GB,
         )
 
         # Outputs
         CfnOutput(self, "DbEndpoint", value=cluster.cluster_endpoint.hostname)
         CfnOutput(self, "DbSecretArn", value=db_secret.secret_arn)
         CfnOutput(self, "EcrRepoUri", value=ecr_repo.repository_uri)
-        CfnOutput(self, "AppRunnerUrl", value=apprunner_service.attr_service_url)
+        CfnOutput(self, "AppRunnerUrl", value=apprunner_service.service_url)
 
         # --- Monitoring & Alarms --- #
         # SNS topic for alarm notifications (add your email via env var ALERT_EMAIL or manually)
