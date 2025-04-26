@@ -27,18 +27,23 @@ class GreatFitInfraStack(Stack):
 
         # VPC across 2 AZs with public + isolated subnets
         vpc = ec2.Vpc(
-            self,
-            "GreatFitVpc",
+            self, "GreatFitVpc",
             max_azs=2,
+            nat_gateways=1,                    # shared NAT
             subnet_configuration=[
-                ec2.SubnetConfiguration(
+                ec2.SubnetConfiguration(       # 10.0.0.0/24 & 10.0.1.0/24
                     name="public",
                     subnet_type=ec2.SubnetType.PUBLIC,
                     cidr_mask=24,
                 ),
-                ec2.SubnetConfiguration(
+                ec2.SubnetConfiguration(       # 10.0.2.0/24 & 10.0.3.0/24
                     name="isolated",
                     subnet_type=ec2.SubnetType.PRIVATE_ISOLATED,
+                    cidr_mask=24,
+                ),
+                ec2.SubnetConfiguration(       # 10.0.4.0/24 & 10.0.5.0/24
+                    name="private-egress",
+                    subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
                     cidr_mask=24,
                 ),
             ],
@@ -132,7 +137,7 @@ class GreatFitInfraStack(Stack):
             "AppVpcConnector",
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
+                subnet_group_name="private-egress"
             ),
             security_groups=[apprunner_sg],
         )
@@ -146,11 +151,18 @@ class GreatFitInfraStack(Stack):
                 image_configuration=apprunner.ImageConfiguration(
                     port=8000,
                     environment_variables={
-                        "DATABASE_URL": database_url,
-                        "IMAGE_URI": f"{ecr_repo.repository_uri}:latest",
+                        "DB_HOST": cluster.cluster_endpoint.hostname,
+                        "DB_PORT": "5432",
+                        "DB_NAME": "greatfit",
+                        "DB_USER": "gfadmin",
                     },
                     environment_secrets={
-                        "OPENROUTER_API_KEY": apprunner.Secret.from_secrets_manager(openrouter_secret)
+                        "DB_PASSWORD": apprunner.Secret.from_secrets_manager(
+                            db_secret, field="password"
+                        ),
+                        "OPENROUTER_API_KEY": apprunner.Secret.from_secrets_manager(
+                            openrouter_secret
+                        ),
                     },
                 ),
             ),
