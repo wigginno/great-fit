@@ -32,4 +32,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY --from=assets /work/build/tailwind.css static/css/
 COPY . .
 
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
+
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
