@@ -2,7 +2,9 @@ name: CI / CD
 
 on:
   push:
-    branches: [ "main", "ci-cd-pipeline" ]
+    branches:
+      - main
+      - 'ci/**'
 
 permissions:
   id-token: write  # allow GitHub OIDC to assume AWS role
@@ -63,10 +65,3 @@ jobs:
         run: |
           pip install -r requirements.txt
           cdk deploy --require-approval never
-
-      - name: Run database migrations (Alembic)
-        run: |
-          pip install -r requirements.txt
-          alembic upgrade head
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
