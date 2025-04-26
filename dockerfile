@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG TARGETARCH
+ARG TARGETARCH=amd64
 FROM node:20-slim AS assets
 WORKDIR /work
 
