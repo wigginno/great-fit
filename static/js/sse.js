@@ -28,7 +28,7 @@ function connectToSSE(userId = window.currentUserId) {
   // Create new connection
   // For SSE, token cannot be sent via headers easily, so include token as query param
   const token = localStorage.getItem('id_token');
-  const url = token ? `/stream-jobs/${userId}?token=${token}` : `/stream-jobs/${userId}`;
+  const url = token ? `/stream-jobs?token=${token}` : `/stream-jobs`;
   eventSource = new EventSource(url);
   console.log("SSE: Connecting to /stream-jobs/" + userId);
 

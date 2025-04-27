@@ -34,6 +34,7 @@ import crud
 import logic
 from database import SessionLocal, create_db_and_tables, get_db
 from auth import get_current_user, AUTH_ENABLED
+from settings import get_settings, Settings
 
 # Initialise observability before creating app
 init_observability()
@@ -141,20 +142,26 @@ manager = ConnectionManager()
 
 # --- Root Endpoint --- Serve index page with Jinja2 Template --- #
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
+async def read_root(request: Request, settings: Settings = Depends(get_settings)):
     """Render the main index page.
 
     Uses Jinja2 template rendering instead of serving a static file so that we
     can progressively migrate to server‑side rendering with HTMX and Alpine.js
     in the frontend.
     """
+    # Get settings via dependency injection
+    # settings = get_settings()
+
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
-            "env": "dev",
-            "cognito_app_client_id": os.getenv("COGNITO_APP_CLIENT_ID", ""),
-            "cognito_domain": os.getenv("COGNITO_DOMAIN", ""),
+            "env": "dev", # TODO: Make this dynamic based on actual environment?
+            # Pass Cognito settings from the Settings object
+            "cognito_user_pool_id": settings.cognito_user_pool_id or "",
+            "cognito_app_client_id": settings.cognito_app_client_id or "",
+            "cognito_domain": settings.cognito_domain or "",
+            "aws_region": settings.aws_region or "",
         },
     )
 
@@ -230,152 +237,100 @@ async def extract_text_from_resume(file: UploadFile) -> str:
 
 
 # --- User Profile Endpoints (Assuming user_id=1 for PoC) ---
-@app.post(
-    "/users/{user_id}/profile/",
-    response_model=schemas.UserProfile,
-    tags=["User Profile"],
-)
+@app.post("/profile/", response_model=schemas.UserProfile, tags=["User Profile"])
 def create_or_update_profile_endpoint(
-    user_id: int,
     profile: schemas.UserProfileCreate,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
-
-    # Check if the user exists in the database
+    user_id = current_user.id
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
-        # User doesn't exist, create new user
-        user = crud.create_user(
-            db=db, user=schemas.UserCreate(email="user@example.com")
-        )
-
+        user = crud.create_user(db=db, user=schemas.UserCreate(email=current_user.email))
     crud.create_or_update_user_profile(db=db, user_id=user_id, profile=profile)
-    # Retrieve the updated profile to return it
     profile_json_str = crud.get_user_profile(db=db, user_id=user_id)
     if profile_json_str is None:
-        # User exists but has no profile
         return Response(
-            status_code=204,  # No Content
+            status_code=204,
             headers={"X-Profile-Status": "no_profile_found"},
         )
-
-    # Normal case - return the profile
     profile_data = json.loads(profile_json_str)
     return schemas.UserProfile(
         id=user_id, owner_email=user.email, profile_data=profile_data
     )
 
 
-@app.post("/users/{user_id}/resume/upload", tags=["User Profile"])
+@app.post("/resume/upload", tags=["User Profile"])
 async def upload_resume_endpoint(
-    user_id: int,
     resume: UploadFile = File(...),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
-
-    # Extract text from the resume file
+    user_id = current_user.id
     resume_text = await extract_text_from_resume(resume)
-
     if not resume_text.strip():
         raise HTTPException(
             status_code=400, detail="Could not extract text from the resume"
         )
-
-    # Parse the resume text using LLM
     profile_data = await logic.parse_resume_with_llm(resume_text)
-
-    # Check if the user exists in the database
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
-        # User doesn't exist, create new user
-        user = crud.create_user(
-            db=db, user=schemas.UserCreate(email="user@example.com")
-        )
-
-    # Create or update the user profile with the parsed data
+        user = crud.create_user(db=db, user=schemas.UserCreate(email=current_user.email))
     profile = schemas.UserProfileCreate(profile_data=profile_data)
     crud.create_or_update_user_profile(db=db, user_id=user_id, profile=profile)
-
-    # Create the response object and return as JSON
     response_data = {
         "id": user_id,
         "owner_email": user.email,
         "profile_data": profile_data,
     }
-
     return JSONResponse(content=response_data)
 
 
-@app.get("/users/{user_id}/profile/", response_model=schemas.UserProfile, tags=["User Profile"])
+@app.get("/profile/", response_model=schemas.UserProfile, tags=["User Profile"])
 def get_profile_endpoint(
-    user_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
-
-    # Check if user exists first
+    user_id = current_user.id
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
-        # Return a custom response for no user
         return Response(
-            status_code=204, headers={"X-Profile-Status": "no_user_found"}  # No Content
+            status_code=204, headers={"X-Profile-Status": "no_user_found"}
         )
-
-    # Now check for profile
     profile_json_str = crud.get_user_profile(db=db, user_id=user_id)
     if profile_json_str is None:
-        # User exists but has no profile
         return Response(
-            status_code=204,  # No Content
-            headers={"X-Profile-Status": "no_profile_found"},
+            status_code=204, headers={"X-Profile-Status": "no_profile_found"}
         )
-
-    # Normal case - return the profile
     profile_data = json.loads(profile_json_str)
     profile = schemas.UserProfile(
         id=user_id, owner_email=user.email, profile_data=profile_data
     )
-
-    # Convert to dictionary and return as JSON response
     return JSONResponse(content=profile.model_dump())
 
 
-@app.get("/users/{user_id}/jobs/", response_model=List[schemas.Job], tags=["Jobs"])
+@app.get("/jobs/", response_model=List[schemas.Job], tags=["Jobs"])
 def get_jobs_endpoint(
-    user_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
+    user_id = current_user.id
     jobs = crud.get_jobs_for_user(db=db, user_id=user_id)
     return jobs
 
 
-@app.get("/users/{user_id}/jobs/{job_id}", response_model=schemas.Job, tags=["Jobs"])
+@app.get("/jobs/{job_id}", response_model=schemas.Job, tags=["Jobs"])
 def get_job_endpoint(
-    user_id: int,
     job_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Get a specific job by ID for a user
-    """
+    user_id = current_user.id
     job = crud.get_job(db=db, job_id=job_id, user_id=user_id)
     if not job:
         raise HTTPException(
             status_code=404, detail=f"Job with id {job_id} not found for user {user_id}"
         )
-
     return JSONResponse(
         content={
             "id": job.id,
@@ -390,18 +345,13 @@ def get_job_endpoint(
     )
 
 
-@app.delete("/users/{user_id}/jobs/{job_id}", tags=["Jobs"])
+@app.delete("/jobs/{job_id}", tags=["Jobs"])
 async def delete_job_endpoint(
-    user_id: int,
     job_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if user_id != current_user.id:  # keep existing auth guard
-        raise HTTPException(
-            status_code=403, detail="Operation not permitted for this user"
-        )
-
+    user_id = current_user.id
     success = crud.delete_job(db=db, job_id=job_id, user_id=user_id)
     if not success:
         raise HTTPException(
@@ -409,8 +359,6 @@ async def delete_job_endpoint(
             detail=f"Job with id {job_id} not found for user {user_id}",
         )
     db.commit()
-
-    # Notify front‑end via SSE
     await manager.send_personal_message(
         {"job_id": job_id}, user_id, event="job_deleted"
     )
@@ -577,40 +525,6 @@ async def process_job_in_background(
         await manager.decrement_processing_count(user_id)
 
 
-# --- Endpoint to save job from Chrome Extension --- #
-@app.post(
-    "/users/{user_id}/jobs/from_extension",
-    status_code=status.HTTP_202_ACCEPTED,
-    tags=["Jobs", "Extension"],
-)
-async def save_job_from_extension(
-    user_id: int,
-    markdown_request: schemas.JobMarkdownRequest,
-    background_tasks: BackgroundTasks,
-    current_user: models.User = Depends(get_current_user),
-):
-    if user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
-    print(f"DEBUG: Entering save_job_from_extension for user {user_id}")
-    logger.info(
-        f"Endpoint: Received job markdown request from extension for user {user_id}. Scheduling background processing."
-    )
-
-    # Increment count immediately for faster UI feedback that the request was received
-    await manager.increment_processing_count(user_id)
-
-    # Schedule the actual processing to run in the background
-    background_tasks.add_task(
-        process_job_in_background, user_id, markdown_request.markdown_content, manager
-    )
-
-    # Return an immediate response indicating acceptance
-    logger.info(f"Endpoint: Responding 202 Accepted for user {user_id} job submission.")
-    return {
-        "message": "Job submission received and is being processed in the background."
-    }
-
-
 # --- Job Ranking and Tailoring Endpoints ---
 
 
@@ -620,48 +534,39 @@ class JobRankResponse(BaseModel):
 
 
 @app.post(
-    "/users/{user_id}/jobs/{job_id}/rank",
+    "/jobs/{job_id}/rank",
     response_model=JobRankResponse,
     tags=["LLM Features"],
 )
 async def rank_job_endpoint(
-    user_id: int,
     job_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Operation not permitted for this user")
-    """Triggers LLM ranking for a specific job based on user 1's profile."""
-    # user_id is now a parameter, no need to hardcode
+    user_id = current_user.id
     score, explanation = await logic.rank_job_with_llm(
         db=db, job_id=job_id, user_id=user_id
     )
     if score is None or explanation is None:
         raise HTTPException(status_code=500, detail="Failed to rank job using LLM")
-
     db.commit()
-
     return {"score": score, "explanation": explanation}
 
 
 @app.post(
-    "/users/{user_id}/jobs/tailor-suggestions", response_model=schemas.TailoringResponse
+    "/jobs/tailor-suggestions", response_model=schemas.TailoringResponse
 )
 async def get_tailoring_suggestions_endpoint(
     request_data: schemas.TailoringRequest,
-    user_id: int = Path(..., title="The ID of the user to get suggestions for"),
+    current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Generates tailoring suggestions for a given job description based on the user's profile.
-    """
+    user_id = current_user.id
     db_profile = crud.get_user_profile(db, user_id=user_id)
     if db_profile is None:
         raise HTTPException(
             status_code=404, detail=f"User profile not found for user_id {user_id}"
         )
-
     try:
         suggestions: schemas.TailoringResponse = await logic.get_tailoring_suggestions(
             profile_text=db_profile, job_description=request_data.job_description
@@ -675,49 +580,29 @@ async def get_tailoring_suggestions_endpoint(
 
 
 # --- SSE Endpoint --- #
-@app.get("/stream-jobs/{user_id}")
+@app.get("/stream-jobs")
 async def stream_jobs(
     request: Request,
-    user_id: int,
+    current_user: models.User = Depends(get_current_user),
     token: str | None = None,
 ):
     """Endpoint for Server-Sent Events to stream new job updates."""
-    if AUTH_ENABLED:
-        if token is None:
-            raise HTTPException(status_code=401, detail="Missing token for SSE")
-
-        from auth import verify_token
-
-        payload = verify_token(token)
-
-        # Validate that the token owner matches path param by looking up the user record
-        db = SessionLocal()
-        try:
-            user = crud.get_user_by_email(db, payload.email or payload.sub)
-            if not user or user.id != user_id:
-                raise HTTPException(status_code=403, detail="Token/user mismatch")
-        finally:
-            db.close()
-
+    user_id = current_user.id
     queue = await manager.connect(user_id)
-
     async def event_generator():
         try:
             while True:
-                # Wait for a message in the queue
                 message_dict = await queue.get()
                 if await request.is_disconnected():
                     logger.info(
                         f"SSE client disconnected for user {user_id} before sending."
                     )
                     break
-                # Yield the event in SSE format
                 yield message_dict
         except asyncio.CancelledError:
             logger.info(f"SSE connection cancelled for user {user_id}")
         finally:
             manager.disconnect(user_id)
-
     return EventSourceResponse(event_generator())
 
 

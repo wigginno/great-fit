@@ -9,7 +9,7 @@ async function loadProfile() {
     // Use currentUserId globally
     const userId = window.currentUserId;
 
-    const response = await fetch(`/users/${userId}/profile/`, { headers: { ...window.authHeaders() } });
+    const response = await fetch(`/profile/`, { headers: { ...window.authHeaders() } });
 
     if (response.status === 204) {
       // No profile yet — keep upload UI visible

@@ -3,10 +3,6 @@
  * Handles Cognito Hosted UI login/logout via Authorization Code Grant w/ PKCE.
  */
 
-// --- Imports & Polyfills ---
-// Ensure Amplify is available globally (adjust path if using build tools/modules)
-import { Amplify, Auth } from 'aws-amplify';
-
 // --- Configuration ---
 function configureAmplify() {
   if (!window.COGNITO_USER_POOL_ID || !window.COGNITO_APP_CLIENT_ID || !window.COGNITO_DOMAIN) {

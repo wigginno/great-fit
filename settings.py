@@ -12,6 +12,13 @@ class Settings(BaseSettings):
 
     openrouter_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
+
+    # Cognito Settings (Optional for local dev)
+    cognito_user_pool_id: Optional[str] = None
+    cognito_app_client_id: Optional[str] = None
+    cognito_domain: Optional[str] = None
+    aws_region: Optional[str] = None
+
     # Add other settings variables here as needed
 
 

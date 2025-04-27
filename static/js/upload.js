@@ -47,7 +47,7 @@ async function uploadResumeFile() {
     formData.append("resume", file);
 
     // Upload file
-    const response = await fetch(`/users/${userId}/resume/upload`, {
+    const response = await fetch(`/resume/upload`, {
       method: "POST",
       body: formData,
       headers: { ...window.authHeaders() },

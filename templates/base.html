@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}Great Fit{% endblock %}</title>
 
+    <script src="https://unpkg.com/aws-amplify@4.3.24/dist/aws-amplify.min.js"></script>
+    <script>
+      const { Amplify, Auth } = window.aws_amplify;
+      window.Amplify = Amplify;
+      window.Auth    = Auth;
+    </script>
+
     <!-- Tailwind (dev via CDN, replaced by compiled CSS in production) -->
     {% if env == 'dev' %}
       <script src="https://cdn.tailwindcss.com"></script>
@@ -14,8 +21,10 @@
   </head>
   <body class="antialiased font-sans text-gray-800">
     <script>
+      window.COGNITO_USER_POOL_ID = "{{ cognito_user_pool_id }}";
       window.COGNITO_APP_CLIENT_ID = "{{ cognito_app_client_id }}";
       window.COGNITO_DOMAIN = "{{ cognito_domain }}";
+      window.AWS_REGION = "{{ aws_region }}";
     </script>
     {% block content %}{% endblock %}
     <!-- Toast Container -->
