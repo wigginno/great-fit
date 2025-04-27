@@ -11,9 +11,21 @@ async function loadProfile() {
 
     const response = await fetch(`/users/${userId}/profile/`, { headers: { ...window.authHeaders() } });
 
+    if (response.status === 204) {
+      // No profile yet — keep upload UI visible
+      console.info("No profile found for user", userId);
+      return;
+    }
+
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      let msg = `HTTP error! status: ${response.status}`;
+      try {
+        const errJson = await response.json();
+        msg = errJson.detail || msg;
+      } catch (_) {
+        /* ignore */
+      }
+      throw new Error(msg);
     }
 
     const responseData = await response.json();

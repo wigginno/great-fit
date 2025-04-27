@@ -19,9 +19,10 @@ import os
 import logging
 from functools import lru_cache
 from typing import Annotated
+import time
 
 import httpx
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from jose import jwt, JWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -31,6 +32,8 @@ import crud
 
 logger = logging.getLogger(__name__)
 
+# Detect if authentication should be enabled
+AUTH_ENABLED = bool(os.getenv("COGNITO_USER_POOL_ID") and os.getenv("COGNITO_APP_CLIENT_ID"))
 
 class TokenPayload(BaseModel):
     sub: str
@@ -58,10 +61,9 @@ def _load_settings() -> AuthSettings:
     region = os.getenv("AWS_REGION", "us-east-1")
     user_pool_id = os.getenv("COGNITO_USER_POOL_ID")
     client_id = os.getenv("COGNITO_APP_CLIENT_ID")
-    if not user_pool_id or not client_id:
-        raise RuntimeError(
-            "Missing COGNITO_USER_POOL_ID or COGNITO_APP_CLIENT_ID env vars"
-        )
+    if not AUTH_ENABLED:
+        # In local-dev mode we won't actually call this, but keep function intact
+        raise RuntimeError("Cognito auth disabled in local mode")
     return AuthSettings(region=region, user_pool_id=user_pool_id, client_id=client_id)
 
 
@@ -80,6 +82,15 @@ def verify_token(token: str) -> TokenPayload:
 
     Raises HTTPException(401) on failure.
     """
+    if not AUTH_ENABLED:
+        # Return dummy payload for local usage
+        return TokenPayload(
+            sub="local-dev",
+            email="local@example.com",
+            exp=int(time.time()) + 3600,
+            aud="local",
+        )
+
     return _verify_token(token)
 
 # Kept for backwards-compat internal usage
@@ -101,13 +112,27 @@ def _verify_token(token: str) -> TokenPayload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
+# Helper to extract Authorization header (works with FastAPI DI)
+def _get_authorization_header(request: Request) -> str | None:
+    return request.headers.get("Authorization")
+
+
 # --- FastAPI dependency ---
 UserInDB = dict  # alias for crud.User object but avoid circular import typing
 
 async def get_current_user(
-    authorization: Annotated[str | None, Depends(lambda request: request.headers.get("Authorization"))],
+    authorization: Annotated[str | None, Depends(_get_authorization_header)],
     db: Session = Depends(get_db),
 ) -> UserInDB:
+    if not AUTH_ENABLED:
+        # Local dev: always return / create a default user
+        email = "local@example.com"
+        user = crud.get_user_by_email(db, email)
+        if not user:
+            user = crud.create_user(db, crud.schemas.UserCreate(email=email))
+            db.commit()
+        return user
+
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
 

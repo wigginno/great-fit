@@ -33,7 +33,7 @@ import schemas
 import crud
 import logic
 from database import SessionLocal, create_db_and_tables, get_db
-from auth import get_current_user
+from auth import get_current_user, AUTH_ENABLED
 
 # Initialise observability before creating app
 init_observability()
@@ -148,7 +148,15 @@ async def read_root(request: Request):
     can progressively migrate to server‑side rendering with HTMX and Alpine.js
     in the frontend.
     """
-    return templates.TemplateResponse("index.html", {"request": request, "env": "dev"})
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "env": "dev",
+            "cognito_app_client_id": os.getenv("COGNITO_APP_CLIENT_ID", ""),
+            "cognito_domain": os.getenv("COGNITO_DOMAIN", ""),
+        },
+    )
 
 
 # Add route for favicon.ico
@@ -674,21 +682,22 @@ async def stream_jobs(
     token: str | None = None,
 ):
     """Endpoint for Server-Sent Events to stream new job updates."""
-    if token is None:
-        raise HTTPException(status_code=401, detail="Missing token for SSE")
+    if AUTH_ENABLED:
+        if token is None:
+            raise HTTPException(status_code=401, detail="Missing token for SSE")
 
-    from auth import verify_token
+        from auth import verify_token
 
-    payload = verify_token(token)
+        payload = verify_token(token)
 
-    # Validate that the token owner matches path param by looking up the user record
-    db = SessionLocal()
-    try:
-        user = crud.get_user_by_email(db, payload.email or payload.sub)
-        if not user or user.id != user_id:
-            raise HTTPException(status_code=403, detail="Token/user mismatch")
-    finally:
-        db.close()
+        # Validate that the token owner matches path param by looking up the user record
+        db = SessionLocal()
+        try:
+            user = crud.get_user_by_email(db, payload.email or payload.sub)
+            if not user or user.id != user_id:
+                raise HTTPException(status_code=403, detail="Token/user mismatch")
+        finally:
+            db.close()
 
     queue = await manager.connect(user_id)
 

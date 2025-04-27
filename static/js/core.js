@@ -10,17 +10,22 @@ document.addEventListener("DOMContentLoaded", function () {
     savedJobsSection.classList.add("hidden");
   }
 
-  // Initially we don't have profile - loadProfile will reveal sections when appropriate
-  loadProfile();
-
   // Set up event listeners for form submissions
   setupEventListeners();
 
   // Initialize the file upload functionality
   initializeFileUpload();
 
-  // Connect to SSE for real-time job updates
-  connectToSSE(window.currentUserId);
+  // Wait for auth.js to fetch the user, then load profile & SSE
+  const waitForUser = () => {
+    if (window.currentUserId) {
+      loadProfile();
+      // connectToSSE handled in sse.js auto-connect
+    } else {
+      setTimeout(waitForUser, 250);
+    }
+  };
+  waitForUser();
 });
 
 // Provide a global showToast helper early so other modules can use it before ui.js loads.

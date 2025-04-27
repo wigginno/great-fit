@@ -18,6 +18,7 @@ aiofiles
 
 # Monitoring
 aws-xray-sdk
+aws_xray_sdk
 aws-embedded-metrics
 json-log-formatter
 

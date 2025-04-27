@@ -13,6 +13,10 @@
     {% endif %}
   </head>
   <body class="antialiased font-sans text-gray-800">
+    <script>
+      window.COGNITO_APP_CLIENT_ID = "{{ cognito_app_client_id }}";
+      window.COGNITO_DOMAIN = "{{ cognito_domain }}";
+    </script>
     {% block content %}{% endblock %}
     <!-- Toast Container -->
     <div x-data="toastStore()" x-init="init()" x-show="visible" x-transition class="fixed bottom-4 right-4 w-64 z-50" :class="bgClass()">
