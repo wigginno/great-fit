@@ -1,73 +1,135 @@
-/* auth.js – Cognito Hosted-UI token handling & helper headers */
+/**
+ * auth.js - Authentication management using AWS Amplify
+ * Handles Cognito Hosted UI login/logout via Authorization Code Grant w/ PKCE.
+ */
 
-(function () {
-  // 1. Capture id_token from Cognito Hosted-UI redirect fragment
-  const hash = window.location.hash;
-  if (hash && hash.includes('id_token=')) {
-    const params = new URLSearchParams(hash.slice(1));
-    const token = params.get('id_token');
-    if (token) {
-      localStorage.setItem('id_token', token);
-      // Show nav as authenticated immediately
-      renderAuthNav(true);
-    }
-    // Clean the URL (remove fragment)
-    history.replaceState({}, document.title, window.location.pathname);
+// --- Imports & Polyfills ---
+// Ensure Amplify is available globally (adjust path if using build tools/modules)
+import { Amplify, Auth } from 'aws-amplify';
+
+// --- Configuration ---
+function configureAmplify() {
+  if (!window.COGNITO_USER_POOL_ID || !window.COGNITO_APP_CLIENT_ID || !window.COGNITO_DOMAIN) {
+    console.warn("Cognito env vars not set, Amplify auth disabled.");
+    return false; // Indicates auth is disabled
   }
 
-  // 2. Global helper to attach Authorization header
-  window.authHeaders = function () {
-    const token = localStorage.getItem('id_token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  };
+  Amplify.configure({
+    Auth: {
+      region: window.AWS_REGION || 'us-east-1', // Fallback region if not set
+      userPoolId: window.COGNITO_USER_POOL_ID,
+      userPoolWebClientId: window.COGNITO_APP_CLIENT_ID,
+      // OAUTH settings - REQUIRED for Authorization Code Grant
+      oauth: {
+        domain: window.COGNITO_DOMAIN, // e.g., your-domain.auth.us-east-1.amazoncognito.com
+        scope: ['openid', 'email', 'profile'],
+        redirectSignIn: window.location.origin + '/', // Redirect back to root after sign in
+        redirectSignOut: window.location.origin + '/', // Redirect back to root after sign out
+        responseType: 'code' // Must be 'code' for Authorization Code Grant
+      }
+    }
+  });
+  console.log("Amplify Auth configured.");
+  return true; // Indicates auth is enabled
+}
 
-  // 3. Fetch current user id once the DOM is ready
-  document.addEventListener('DOMContentLoaded', async () => {
+// --- Global State & Helpers ---
+window.currentUserId = null; // Will be set after successful auth
+window.authHeaders = async () => {
+  try {
+    // Amplify automatically refreshes tokens if needed
+    const session = await Auth.currentSession();
+    const idToken = session.getIdToken().getJwtToken();
+    return idToken ? { Authorization: `Bearer ${idToken}` } : {};
+  } catch (error) {
+    // console.log('No active session found for authHeaders:', error);
+    return {}; // No authenticated session
+  }
+};
+
+// --- Core Auth Logic ---
+async function checkAuthState() {
+  const authEnabled = configureAmplify();
+  if (!authEnabled) {
+    // Auth disabled - try to fetch user info assuming local mode
     try {
-      const res = await fetch('/users/me', { headers: window.authHeaders() });
+      // Use the backend's local mode logic directly
+      const res = await fetch('/users/me'); // No auth header needed in local mode
       if (res.ok) {
         const user = await res.json();
         window.currentUserId = user.id;
-        renderAuthNav(!!localStorage.getItem('id_token'));
-      } else if (res.status === 401) {
-        console.warn('Not authenticated');
-        renderAuthNav(false);
+        console.log('Local mode: User ID set to', window.currentUserId);
+        // Trigger SSE connection now that userId is set
+        if (typeof connectToSSE === 'function') connectToSSE(window.currentUserId);
       } else {
-        console.error('Failed to fetch /users/me', await res.text());
-        renderAuthNav(false);
+        console.error('Local mode: Failed to fetch /users/me', await res.text());
       }
     } catch (err) {
-      console.error('Error fetching /users/me', err);
+      console.error('Local mode: Error fetching /users/me', err);
     }
-  });
-
-  async function logout() {
-    localStorage.removeItem("id_token");
-    window.currentUserId = undefined;
-    renderAuthNav(false);
-    location.reload();
+    renderAuthNav(false, false); // Render as not logged in, auth disabled
+    return;
   }
 
-  function renderAuthNav(isAuthed) {
-    const nav = document.getElementById("authNav");
-    if (!nav) return;
-    if (!window.COGNITO_DOMAIN || !window.COGNITO_APP_CLIENT_ID) {
-      nav.innerHTML = ""; // hide in local mode
-      return;
-    }
-    if (isAuthed) {
-      nav.innerHTML = `<button id="signOutBtn" class="text-sm text-white hover:text-gray-200">Sign Out</button>`;
-      document.getElementById("signOutBtn").addEventListener("click", logout);
+  // Auth enabled - use Amplify
+  try {
+    const user = await Auth.currentAuthenticatedUser();
+    const session = await Auth.currentSession(); // Ensure session is valid
+    const cognitoUser = await Auth.currentUserInfo();
+    window.currentUserId = cognitoUser.attributes.sub; // Use Cognito 'sub' as ID
+    console.log('User authenticated via Amplify:', cognitoUser.attributes);
+    renderAuthNav(true, true); // Render as logged in, auth enabled
+
+    // Now fetch our internal user record (to ensure it exists/create if needed)
+    // This mimics the backend's get_current_user upsert logic which happens on first API hit anyway
+    const meResponse = await fetch('/users/me', { headers: await window.authHeaders() });
+    if (meResponse.ok) {
+        const dbUser = await meResponse.json();
+        // Optional: Verify dbUser.id matches cognitoUser.attributes.sub if needed,
+        // though backend validation should handle mismatches.
+        console.log('Backend user record confirmed/created for', dbUser.email);
+        // Trigger SSE connection now that userId is set
+        if (typeof connectToSSE === 'function') connectToSSE(dbUser.id);
     } else {
-      const clientId = window.COGNITO_APP_CLIENT_ID;
-      const domain = window.COGNITO_DOMAIN;
-      const redirect = encodeURIComponent(window.location.origin + "/");
-      const loginUrl = `${domain}/login?response_type=token&client_id=${clientId}&redirect_uri=${redirect}`;
-      nav.innerHTML = `<a href="${loginUrl}" class="text-sm text-white hover:text-gray-200">Sign In</a>`;
+        console.error("Failed to verify/create backend user record via /users/me", await meResponse.text());
     }
+
+
+  } catch (error) {
+    // console.log('User not authenticated via Amplify:', error);
+    window.currentUserId = null;
+    renderAuthNav(false, true); // Render as not logged in, auth enabled
   }
 
-  // Expose to other scripts if needed
-  window.logout = logout;
-  window.renderAuthNav = renderAuthNav;
-})();
+  // Clean up Cognito code from URL if present (Amplify might do this, but belt-and-suspenders)
+  if (window.location.search.includes('code=')) {
+    const nextURL = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, nextURL);
+  }
+}
+
+// --- UI Functions ---
+function renderAuthNav(isAuthed, authEnabled) {
+  const nav = document.getElementById('authNav');
+  if (!nav) return;
+
+  if (!authEnabled) {
+    nav.innerHTML = ''; // Hide sign-in/out in local mode
+    return;
+  }
+
+  if (isAuthed) {
+    nav.innerHTML = `<button id="signOutBtn" class="text-sm text-white hover:text-gray-200">Sign Out</button>`;
+    document.getElementById('signOutBtn')?.addEventListener('click', () => Auth.signOut());
+  } else {
+    // Use Amplify's federatedSignIn which handles the redirect based on config
+    nav.innerHTML = `<a href="#" id="signInLink" class="text-sm text-white hover:text-gray-200">Sign In</a>`;
+    document.getElementById('signInLink')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        Auth.federatedSignIn(); // This initiates the redirect to Cognito Hosted UI
+    });
+  }
+}
+
+// --- Initialization ---
+document.addEventListener('DOMContentLoaded', checkAuthState);
