@@ -19,7 +19,14 @@ class Settings(BaseSettings):
     cognito_domain: Optional[str] = None
     aws_region: Optional[str] = None
 
+    # Stripe billing settings
+    stripe_secret_key: Optional[str] = None
+    stripe_webhook_secret: Optional[str] = None
+    stripe_price_id_50_credits: Optional[str] = None
+
     # Add other settings variables here as needed
+    # Application base URL (for constructing callback URLs etc.)
+    app_base_url: str = "http://localhost:8000"  # Default for local dev
 
 
 @lru_cache()
