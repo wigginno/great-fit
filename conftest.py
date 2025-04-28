@@ -4,6 +4,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
+# --- Alembic Imports ---
+from alembic.config import Config
+from alembic import command
+# --- End Alembic Imports ---
+
 # Import app and DB dependency function first
 from main import app, get_db
 
@@ -21,7 +26,7 @@ TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_eng
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_database():
-    """Create the test database once for the entire test session."""
+    """Create the test database from models and stamp with Alembic head."""
     db_path = TEST_DATABASE_URL.split("///")[-1]
     if os.path.exists(db_path):
         try:
@@ -30,8 +35,17 @@ def setup_test_database():
         except OSError as e:
             print(f"Error removing existing test database file {db_path}: {e}")
 
-    print(f"Creating test database tables at {db_path}")
+    print(f"Creating test database tables from models at {db_path}")
+    # --- Create schema directly from models --- #
     Base.metadata.create_all(bind=test_engine)
+    # --- End schema creation --- #
+
+    print("Stamping database with Alembic head revision")
+    # --- Stamp the database with the latest Alembic revision --- #
+    alembic_cfg = Config("alembic.ini") # Load base config
+    alembic_cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL) # Point to test DB
+    command.stamp(alembic_cfg, "head") # Mark DB as up-to-date
+    # --- End Alembic stamp --- #
 
     yield  # Tests run here
 
@@ -44,13 +58,9 @@ def setup_test_database():
             print(f"Error removing test database file {db_path}: {e}")
 
 
-@pytest.fixture(scope="function")
-def db_session():
-    """Provides a database session for each test function.
-
-    This session will automatically commit when db.commit() is called, which
-    ensures data created in one test is visible to subsequent API calls.
-    """
+@pytest.fixture(scope="function") # Function scope for session
+def db_session(setup_test_database): # Depends on DB setup
+    """Yields a SQLAlchemy session directly from the test factory."""
     session = TestSessionLocal()
     try:
         yield session

@@ -27,6 +27,7 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
+    credits: int
     profile: Union[UserProfile, None] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -56,7 +57,9 @@ class JobBase(BaseModel):
 
 
 class JobCreate(JobBase):
-    pass
+    ranking_score: float | None = None
+    ranking_explanation: str | None = None
+    tailoring_suggestions: list[str] | None = None
 
 
 class Job(JobBase):

@@ -49,18 +49,27 @@ def create_or_update_user_profile(
 
 # --- Job CRUD ---
 def create_job(db: Session, job: schemas.JobCreate, user_id: int):
-    # Create job with both user_id and owner_id set to same value
+    """Creates a new job entry associated with a user, including score and explanation if provided in the schema."""
+    # Note: The schema might use different names (e.g., ranking_score)
+    # Map them to the model's field names (score, explanation)
     db_job = models.Job(
-        **job.model_dump(exclude_unset=True), user_id=user_id, owner_id=user_id
+        user_id=user_id,
+        owner_id=user_id,
+        title=job.title,
+        company=job.company,
+        description=job.description,
+        tailoring_suggestions=getattr(job, "tailoring_suggestions", None),
+        score=getattr(job, "ranking_score", None),
+        explanation=getattr(job, "ranking_explanation", None),
     )
     db.add(db_job)
-    db.flush()  # Flush to assign ID and make object persistent before refreshing
-    db.refresh(db_job)
+    db.flush()
     return db_job
 
 
 def get_jobs_for_user(db: Session, user_id: int):
-    return db.query(models.Job).filter(models.Job.user_id == user_id).all()
+    """Retrieves all jobs for a specific user."""
+    return db.query(models.Job).filter(models.Job.user_id == user_id).order_by(models.Job.created_at.desc()).all()
 
 
 def get_job(db: Session, job_id: int, user_id: int):
