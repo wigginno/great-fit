@@ -7,7 +7,10 @@
     "build": "tailwindcss --input ./src/index.css --output ./static/css/tailwind.css --minify"
   },
   "devDependencies": {
-    "tailwindcss": "^4.1.4",
-    "@tailwindcss/cli": "^4.1.4"
+    "@tailwindcss/cli": "^4.1.4",
+    "tailwindcss": "^4.1.4"
+  },
+  "dependencies": {
+    "aws-amplify": "^6.14.3"
   }
 }

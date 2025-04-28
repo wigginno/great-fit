@@ -6,6 +6,18 @@
 // Global SSE connection
 let eventSource = null;
 
+// Wait for currentUserId to be set then connect automatically
+document.addEventListener('DOMContentLoaded', () => {
+  const maybeConnect = () => {
+    if (window.currentUserId) {
+      connectToSSE(window.currentUserId);
+    } else {
+      setTimeout(maybeConnect, 500);
+    }
+  };
+  maybeConnect();
+});
+
 // Function to connect to SSE for real-time updates
 function connectToSSE(userId = window.currentUserId) {
   // Close any existing connection
@@ -14,7 +26,10 @@ function connectToSSE(userId = window.currentUserId) {
   }
 
   // Create new connection
-  eventSource = new EventSource(`/stream-jobs/${userId}`);
+  // For SSE, token cannot be sent via headers easily, so include token as query param
+  const token = localStorage.getItem('id_token');
+  const url = token ? `/stream-jobs?token=${token}` : `/stream-jobs`;
+  eventSource = new EventSource(url);
   console.log("SSE: Connecting to /stream-jobs/" + userId);
 
   // Connection events
