@@ -62,9 +62,31 @@ class GreatFitInfraStack(Stack):
             ),
         )
 
-        user_pool_id = apprunner.Secret.from_secrets_manager(sm.Secret.from_secret_name_v2(self, "GF_USER_POOL_ID", "greatfit/userpool/id"))
-        user_pool_arn = apprunner.Secret.from_secrets_manager(sm.Secret.from_secret_name_v2(self, "GF_USER_POOL_ARN", "greatfit/userpool/arn"))
-        user_pool_client_id = apprunner.Secret.from_secrets_manager(sm.Secret.from_secret_name_v2(self, "GF_USER_POOL_CLIENT_ID", "greatfit/userpool/clientid"))
+        user_pool_id_secret = sm.Secret.from_secret_name_v2(
+            self,
+            "UserPoolIdSecretLookup",
+            "greatfit/userpool/id"
+        )
+        user_pool_arn_secret = sm.Secret.from_secret_name_v2(
+            self,
+            "UserPoolArnSecretLookup",
+            "greatfit/userpool/arn"
+        )
+        user_pool_client_id_secret = sm.Secret.from_secret_name_v2(
+            self,
+            "UserPoolClientIdSecretLookup",
+            "greatfit/userpool/clientid"
+        )
+
+        user_pool_id_string = user_pool_id_secret.secret_value_from_json(
+            "GF_USER_POOL_ID"
+        ).to_string()
+        user_pool_arn_string = user_pool_arn_secret.secret_value_from_json(
+            "GF_USER_POOL_ARN"
+        ).to_string()
+        user_pool_client_id_string = user_pool_client_id_secret.secret_value_from_json(
+            "GF_USER_POOL_CLIENT_ID"
+        ).to_string()
 
         # RDS Aurora PostgreSQL Serverless v2 cluster
         cluster = rds.DatabaseCluster(
@@ -111,6 +133,9 @@ class GreatFitInfraStack(Stack):
         )
         db_secret.grant_read(instance_role)
         openrouter_secret.grant_read(instance_role)
+        user_pool_id_secret.grant_read(instance_role)
+        user_pool_arn_secret.grant_read(instance_role)
+        user_pool_client_id_secret.grant_read(instance_role)
 
         # Allow basic Cognito read actions (ListUsers for email lookup etc.)
         instance_role.add_to_policy(
@@ -120,7 +145,7 @@ class GreatFitInfraStack(Stack):
                     "cognito-idp:ListUsers",
                     "cognito-idp:GetUser",
                 ],
-                resources=[user_pool_arn],
+                resources=[user_pool_arn_string],
             )
         )
 
@@ -177,8 +202,8 @@ class GreatFitInfraStack(Stack):
                         "DB_NAME": "greatfit",
                         "DB_USER": "gfadmin",
                         "AWS_REGION": self.region,
-                        "COGNITO_USER_POOL_ID": user_pool_id,
-                        "COGNITO_APP_CLIENT_ID": user_pool_client_id,
+                        "COGNITO_USER_POOL_ID": user_pool_id_string,
+                        "COGNITO_APP_CLIENT_ID": user_pool_client_id_string,
                     },
                     environment_secrets={
                         "DB_PASSWORD": apprunner.Secret.from_secrets_manager(
@@ -204,9 +229,9 @@ class GreatFitInfraStack(Stack):
         CfnOutput(self, "AppRunnerUrl", value=apprunner_service.service_url)
 
         # Cognito outputs
-        CfnOutput(self, "UserPoolId", value=user_pool_id)
-        CfnOutput(self, "UserPoolClientId", value=user_pool_client_id)
-        CfnOutput(self, "CognitoDomainUrl", value=f"https://login.greatfit.app")
+        CfnOutput(self, "UserPoolId", value=user_pool_id_string)
+        CfnOutput(self, "UserPoolClientId", value=user_pool_client_id_string)
+        CfnOutput(self, "CognitoDomainUrl", value="https://login.greatfit.app")
 
         # --- Monitoring & Alarms --- #
         # SNS topic for alarm notifications (add your email via env var ALERT_EMAIL or manually)
