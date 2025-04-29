@@ -156,7 +156,11 @@ manager = ConnectionManager()
 
 # --- Root Endpoint --- Serve index page with Jinja2 Template --- #
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request, settings: Settings = Depends(get_settings)):
+async def read_root(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    current_user: models.User = Depends(get_current_user) # <-- ADD THIS DEPENDENCY
+):
     """Render the main index page.
 
     Uses Jinja2 template rendering instead of serving a static file so that we
