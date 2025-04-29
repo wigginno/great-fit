@@ -50,7 +50,7 @@ async function uploadResumeFile() {
     const response = await fetch(`/resume/upload`, {
       method: "POST",
       body: formData,
-      headers: { ...window.authHeaders() },
+      headers: await window.authHeaders(),
     });
 
     // Handle response

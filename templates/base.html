@@ -25,6 +25,7 @@
       window.COGNITO_APP_CLIENT_ID = "{{ cognito_app_client_id }}";
       window.COGNITO_DOMAIN = "{{ cognito_domain }}";
       window.AWS_REGION = "{{ aws_region }}";
+      window.AUTH_BILLING_ENABLED = {{ auth_billing_enabled | tojson }};
     </script>
     {% block content %}{% endblock %}
     <!-- Toast Container -->
@@ -37,6 +38,20 @@
       </div>
     </div>
 
+    <!-- Load core.js BEFORE Alpine.js so Alpine can see global functions like authFlow -->
+    <script src="/static/js/core.js"></script>
+
+    <!-- Explicitly define authFlow before Alpine.js to guarantee global availability -->
+    <script>
+      function authFlow() {
+        return {
+          authBillingEnabled: window.AUTH_BILLING_ENABLED,
+          isLoggedIn: localStorage.getItem('isLoggedIn') === 'true',
+          creditBalance: '--'
+        };
+      }
+    </script>
+
     <!-- Alpine.js for minimal interactivity -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <!-- HTMX for server interactions -->
@@ -45,7 +60,6 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
     <!-- Existing modular JS scripts (may be progressively replaced) -->
-    <script src="/static/js/core.js"></script>
     <script src="/static/js/auth.js"></script>
     <script src="/static/profileFormatter.js"></script>
     <script src="/static/js/profile.js"></script>

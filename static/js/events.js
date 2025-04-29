@@ -51,6 +51,7 @@ function setupEventListeners() {
 
     // Open Modal
     addJobBtn.addEventListener("click", () => {
+      addJobModal.style.display = ""; // clear lingering inline style
       addJobModal.classList.remove("hidden");
       addJobModal.classList.add("flex");
     });

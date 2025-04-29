@@ -19,6 +19,7 @@ class UserProfile(UserProfileBase):
 
 class UserBase(BaseModel):
     email: str
+    cognito_sub: str
 
 
 class UserCreate(UserBase):
@@ -75,6 +76,8 @@ class Job(JobBase):
 # --- Request model for raw markdown from Chrome extension ---
 class JobMarkdownRequest(BaseModel):
     markdown_content: str
+class RawJobInput(BaseModel):
+    raw_description: str
 
 
 # --- Pydantic Models for Tailoring Suggestions --- #

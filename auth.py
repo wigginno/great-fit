@@ -16,8 +16,9 @@ If any variable is missing the dependency raises 500 to signal mis-config.
 from __future__ import annotations
 
 import os
-import logging
+import structlog
 from functools import lru_cache
+from settings import get_settings
 from typing import Annotated
 import time
 
@@ -30,11 +31,9 @@ from sqlalchemy.orm import Session
 from database import get_db
 import crud
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
-# Detect if authentication should be enabled
-AUTH_ENABLED = bool(os.getenv("COGNITO_USER_POOL_ID") and os.getenv("COGNITO_APP_CLIENT_ID"))
-
+# Authentication and billing toggle is now managed via settings.py (auth_billing_enabled)
 class TokenPayload(BaseModel):
     sub: str
     email: str | None = None
@@ -61,7 +60,7 @@ def _load_settings() -> AuthSettings:
     region = os.getenv("AWS_REGION", "us-east-1")
     user_pool_id = os.getenv("COGNITO_USER_POOL_ID")
     client_id = os.getenv("COGNITO_APP_CLIENT_ID")
-    if not AUTH_ENABLED:
+    if not get_settings().auth_billing_enabled:
         # In local-dev mode we won't actually call this, but keep function intact
         raise RuntimeError("Cognito auth disabled in local mode")
     return AuthSettings(region=region, user_pool_id=user_pool_id, client_id=client_id)
@@ -70,7 +69,7 @@ def _load_settings() -> AuthSettings:
 @lru_cache
 def _get_jwks():
     settings = _load_settings()
-    logger.info("Fetching JWKS from %s", settings.jwks_url)
+    logger.info("Fetching JWKS", jwks_url=settings.jwks_url)
     resp = httpx.get(settings.jwks_url, timeout=10)
     resp.raise_for_status()
     return resp.json()
@@ -82,7 +81,7 @@ def verify_token(token: str) -> TokenPayload:
 
     Raises HTTPException(401) on failure.
     """
-    if not AUTH_ENABLED:
+    if not get_settings().auth_billing_enabled:
         # Return dummy payload for local usage
         return TokenPayload(
             sub="local-dev",
@@ -108,7 +107,7 @@ def _verify_token(token: str) -> TokenPayload:
         )
         return TokenPayload.model_validate(payload)
     except JWTError as exc:
-        logger.warning("JWT verification failed: %s", exc)
+        logger.warning("JWT verification failed", exc=str(exc))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
@@ -124,12 +123,12 @@ async def get_current_user(
     authorization: Annotated[str | None, Depends(_get_authorization_header)],
     db: Session = Depends(get_db),
 ) -> UserInDB:
-    if not AUTH_ENABLED:
+    if not get_settings().auth_billing_enabled:
         # Local dev: always return / create a default user
         email = "local@example.com"
         user = crud.get_user_by_email(db, email)
         if not user:
-            user = crud.create_user(db, crud.schemas.UserCreate(email=email))
+            user = crud.create_user(db, crud.schemas.UserCreate(email=email, cognito_sub="local-dev"))
             db.commit()
         return user
 

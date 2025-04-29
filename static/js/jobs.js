@@ -89,32 +89,38 @@ async function loadJobs() {
 
 // Function to save job from modal
 async function saveModalJob() {
-  const modalJobTitle = document.getElementById("modal-job-title");
-  const modalJobCompany = document.getElementById("modal-job-company");
-  const modalJobDescription = document.getElementById("modal-job-description");
+  const rawJobDescription = document.getElementById("rawJobDescription");
   const modalSaveBtn = document.getElementById("modal-save-btn");
   const modalCancelBtn = document.getElementById("modal-cancel-btn");
   const modalLoadingIndicator = document.getElementById("modal-loading-indicator");
   const addJobModal = document.getElementById("add-job-modal");
 
-  // Validation - Description is required
-  if (!modalJobDescription.value.trim()) {
-    const errorDiv = document.getElementById("modal-error") || document.createElement("div");
-    errorDiv.id = "modal-error";
-    errorDiv.className = "mt-3 text-sm text-red-600";
-
-    if (!document.getElementById("modal-error")) {
-      modalJobDescription.after(errorDiv);
+  // Validation - Raw job description required
+  if (!rawJobDescription.value.trim()) {
+    let errorDiv = document.getElementById("modal-error");
+    if (!errorDiv) {
+      errorDiv = document.createElement("div");
+      errorDiv.id = "modal-error";
+      errorDiv.className = "mt-3 text-sm text-red-600";
+      rawJobDescription.after(errorDiv);
     }
+    errorDiv.textContent = "Job description is required.";
     return;
   }
 
   try {
-    // Afficher immédiatement le compteur +1
-    const current = parseInt(document.getElementById('savingIndicatorText').dataset.count || '0', 10);
-    updateProcessingIndicator(current + 1);
+    // --- UX: close modal & toast immediately ---
+    addJobModal.classList.add("hidden");
+    addJobModal.classList.remove("flex");
+    showToast("Job submitted - processing in background...");
 
-    // Disable buttons and show loading
+    // Capture description before clearing so payload isn't empty
+    const markdownValue = rawJobDescription.value;
+
+    // Reset form early so it’s clear when reopened
+    rawJobDescription.value = "";
+
+    // Disable buttons and show loading (even though modal is hidden)
     modalSaveBtn.disabled = true;
     modalCancelBtn.disabled = true;
     modalLoadingIndicator.style.display = "inline-block";
@@ -125,15 +131,13 @@ async function saveModalJob() {
       errorDiv.remove();
     }
 
-    const userId = window.currentUserId;
-
-    // Payload attendu par l’endpoint backend
+    // Payload for backend endpoint
     const payload = {
-      markdown_content: modalJobDescription.value,
+      markdown_content: markdownValue,
     };
 
-    // Appel de l’endpoint POST /jobs/from_extension
-    const response = await fetch(`/jobs/from_extension`, {
+    // Call POST /jobs/markdown (unified job submission)
+    const response = await fetch(`/jobs/markdown`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -141,33 +145,39 @@ async function saveModalJob() {
       },
       body: JSON.stringify(payload),
     });
+    // Log POST response status for debugging
+    console.log("POST /jobs/markdown response status:", response.status);
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      let errorText = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        errorText = errorData.detail || errorText;
+      } catch (_) {}
+      console.error("Job save failed:", errorText);
+      showToast(`Job save failed: ${errorText}`, "error");
+      throw new Error(errorText);
     }
 
-    // Close modal
-    addJobModal.style.display = "none";
+    // Optionally, you could use the returned job data here if needed:
+    // const job = await response.json();
 
-    // Show success message (le SSE créera la carte lorsqu’elle sera prête)
-    showToast("Job submitted – processing in background...");
+    // Modal was already closed & toast shown earlier.
 
-    // Reset form (don't reload jobs - SSE will handle this)
-    modalJobTitle.value = "";
-    modalJobCompany.value = "";
-    modalJobDescription.value = "";
+    // Refresh UI immediately; don’t wait for SSE
+    await loadJobs();
 
+    // Form was reset earlier.
   } catch (error) {
     console.error("Error saving job:", error);
 
     // Show error in modal
-    const errorDiv = document.getElementById("modal-error") || document.createElement("div");
-    errorDiv.id = "modal-error";
-    errorDiv.className = "mt-3 text-sm text-red-600";
-
-    if (!document.getElementById("modal-error")) {
-      modalJobDescription.after(errorDiv);
+    let errorDiv = document.getElementById("modal-error");
+    if (!errorDiv) {
+      errorDiv = document.createElement("div");
+      errorDiv.id = "modal-error";
+      errorDiv.className = "mt-3 text-sm text-red-600";
+      rawJobDescription.after(errorDiv);
     }
     errorDiv.textContent = `Error saving job: ${error.message}`;
   } finally {
