@@ -62,38 +62,9 @@ class GreatFitInfraStack(Stack):
             ),
         )
 
-        # ---------------- Cognito User Pool ---------------- #
-        user_pool = cognito.UserPool(
-            self,
-            "GfUsers",
-            self_sign_up_enabled=True,
-            sign_in_aliases=cognito.SignInAliases(email=True),
-            standard_attributes=cognito.StandardAttributes(
-                email=cognito.StandardAttribute(required=True, mutable=True)
-            ),
-            removal_policy=RemovalPolicy.DESTROY,
-        )
-
-        # App client for SPA / Hosted UI implicit flow
-        app_client = user_pool.add_client(
-            "WebClient",
-            auth_flows=cognito.AuthFlow(user_srp=True, user_password=True),
-            o_auth=cognito.OAuthSettings(
-                flows=cognito.OAuthFlows(
-                    authorization_code_grant=True # <-- CHANGE THIS
-                    # implicit_code_grant=False # Optionally make explicit it's off
-                ),
-                scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
-                callback_urls=["https://greatfit.app/"],
-                logout_urls=["https://greatfit.app/"],
-            ),
-        )
-
-        # Hosted UI domain (https://greatfit.auth.<region>.amazoncognito.com)
-        domain = user_pool.add_domain(
-            "GfDomain",
-            cognito_domain=cognito.CognitoDomainOptions(domain_prefix="greatfit"),
-        )
+        user_pool_id = apprunner.Secret.from_secrets_manager(sm.Secret.from_secret_name_v2(self, "GF_USER_POOL_ID", "greatfit/userpool/id"))
+        user_pool_arn = apprunner.Secret.from_secrets_manager(sm.Secret.from_secret_name_v2(self, "GF_USER_POOL_ARN", "greatfit/userpool/arn"))
+        user_pool_client_id = apprunner.Secret.from_secrets_manager(sm.Secret.from_secret_name_v2(self, "GF_USER_POOL_CLIENT_ID", "greatfit/userpool/clientid"))
 
         # RDS Aurora PostgreSQL Serverless v2 cluster
         cluster = rds.DatabaseCluster(
@@ -130,9 +101,7 @@ class GreatFitInfraStack(Stack):
 
         # Secret holding external API key (must exist beforehand)
         openrouter_secret_name = os.getenv("OPENROUTER_SECRET_NAME", "OPENROUTER_API_KEY")
-        openrouter_secret = sm.Secret.from_secret_name_v2(
-            self, "OpenRouterSecret", openrouter_secret_name
-        )
+        openrouter_secret = sm.Secret.from_secret_name_v2(self, "OpenRouterSecret", openrouter_secret_name)
 
         # Instance role to allow reading secrets
         instance_role = iam.Role(
@@ -151,7 +120,7 @@ class GreatFitInfraStack(Stack):
                     "cognito-idp:ListUsers",
                     "cognito-idp:GetUser",
                 ],
-                resources=[user_pool.user_pool_arn],
+                resources=[user_pool_arn],
             )
         )
 
@@ -208,8 +177,8 @@ class GreatFitInfraStack(Stack):
                         "DB_NAME": "greatfit",
                         "DB_USER": "gfadmin",
                         "AWS_REGION": self.region,
-                        "COGNITO_USER_POOL_ID": user_pool.user_pool_id,
-                        "COGNITO_APP_CLIENT_ID": app_client.user_pool_client_id,
+                        "COGNITO_USER_POOL_ID": user_pool_id,
+                        "COGNITO_APP_CLIENT_ID": user_pool_client_id,
                     },
                     environment_secrets={
                         "DB_PASSWORD": apprunner.Secret.from_secrets_manager(
@@ -235,13 +204,9 @@ class GreatFitInfraStack(Stack):
         CfnOutput(self, "AppRunnerUrl", value=apprunner_service.service_url)
 
         # Cognito outputs
-        CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
-        CfnOutput(self, "UserPoolClientId", value=app_client.user_pool_client_id)
-        CfnOutput(
-            self,
-            "CognitoDomainUrl",
-            value=f"https://{domain.domain_name}.auth.{self.region}.amazoncognito.com",
-        )
+        CfnOutput(self, "UserPoolId", value=user_pool_id)
+        CfnOutput(self, "UserPoolClientId", value=user_pool_client_id)
+        CfnOutput(self, "CognitoDomainUrl", value=f"https://login.greatfit.app")
 
         # --- Monitoring & Alarms --- #
         # SNS topic for alarm notifications (add your email via env var ALERT_EMAIL or manually)
