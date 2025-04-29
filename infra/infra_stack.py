@@ -79,7 +79,10 @@ class GreatFitInfraStack(Stack):
             "WebClient",
             auth_flows=cognito.AuthFlow(user_srp=True, user_password=True),
             o_auth=cognito.OAuthSettings(
-                flows=cognito.OAuthFlows(implicit_code_grant=True),
+                flows=cognito.OAuthFlows(
+                    authorization_code_grant=True # <-- CHANGE THIS
+                    # implicit_code_grant=False # Optionally make explicit it's off
+                ),
                 scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
                 callback_urls=["https://greatfit.app/"],
                 logout_urls=["https://greatfit.app/"],

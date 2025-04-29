@@ -116,9 +116,16 @@ async function checkAuthState() {
 
 
   } catch (error) {
-    // console.log('User not authenticated via Amplify:', error);
+    console.log('User not authenticated via Amplify:', error); // Keep logging for debug
     window.currentUserId = null;
     renderAuthNav(false, true); // Render as not logged in, auth enabled
+    // *** ADD REDIRECT LOGIC HERE ***
+    // Only redirect if on the main page ('/') and auth is enabled
+    if (window.location.pathname === '/' && authEnabled) {
+        console.log("User not authenticated on main page, redirecting to login...");
+        Auth.federatedSignIn(); // Redirect to Cognito Hosted UI
+    }
+    // *** END REDIRECT LOGIC ***
   }
 
   // Clean up Cognito code from URL if present (Amplify might do this, but belt-and-suspenders)
