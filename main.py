@@ -9,6 +9,7 @@ from fastapi import (
     Request,
     Header,
 )
+from fastapi import Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response, HTMLResponse
@@ -28,18 +29,21 @@ import asyncio
 from sse_starlette.sse import EventSourceResponse
 import openai
 import stripe
+import structlog
+from structlog.contextvars import get_contextvars
 
 import models
 import schemas
 import crud
 import logic
 from database import SessionLocal, create_db_and_tables, get_db
-from auth import get_current_user, AUTH_ENABLED
+from auth import get_current_user
 from settings import get_settings, Settings
+from request_id_middleware import RequestIdMiddleware
 
 # Initialise observability before creating app
 init_observability()
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Create DB tables on startup
 create_db_and_tables()
@@ -68,6 +72,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(RequestIdMiddleware)
+
 # Mount static files directory
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -86,27 +92,34 @@ class ConnectionManager:
         """Registers a new user connection and returns their queue."""
         queue = asyncio.Queue()
         self.active_connections[user_id] = queue
-        logger.info(f"SSE connection established for user {user_id}")
+        logger.info("SSE connection established", user_id=user_id)
         return queue
 
     def disconnect(self, user_id: int):
         """Removes a user's queue when they disconnect."""
         if user_id in self.active_connections:
             del self.active_connections[user_id]
-            logger.info(f"SSE connection closed for user {user_id}")
+            logger.info("SSE connection closed", user_id=user_id)
 
     async def send_personal_message(
-        self, message: str, user_id: int, event: str = "message"
-    ):
-        """Sends a message to a specific user's queue."""
+        self, message: str | dict, user_id: int, event: str = "message"
+    ) -> None:
         if user_id in self.active_connections:
-            json_data = json.dumps(message)
+            # If the message is a dict, inject request_id for correlation if missing
+            if isinstance(message, dict):
+                if "request_id" not in message:
+                    req_id = get_contextvars().get("request_id")
+                    if req_id:
+                        message["request_id"] = req_id
+                json_data = json.dumps(message)
+            else:
+                json_data = message
             await self.active_connections[user_id].put(
                 {"event": event, "data": json_data}
             )
-            logger.info(f"Sent SSE event '{event}' to user {user_id}")
+            logger.info("Sent SSE event", sse_event=event, user_id=user_id)
         else:
-            logger.warning(f"Attempted to send SSE to disconnected user {user_id}")
+            logger.warning("Attempted to send SSE to disconnected user", user_id=user_id)
 
     async def increment_processing_count(self, user_id: int):
         if user_id in self.active_connections:
@@ -118,7 +131,7 @@ class ConnectionManager:
                     "data": json.dumps({"count": count}),
                 }
             )
-            logger.info(f"Incremented processing count for user {user_id} to {count}")
+            logger.info("Incremented processing count", user_id=user_id, count=count)
 
     async def decrement_processing_count(self, user_id: int):
         if (
@@ -133,9 +146,9 @@ class ConnectionManager:
                     "data": json.dumps({"count": count}),
                 }
             )
-            logger.info(f"Decremented processing count for user {user_id} to {count}")
+            logger.info("Decremented processing count", user_id=user_id, count=count)
         elif user_id in self.processing_counts and self.processing_counts[user_id] <= 0:
-            logger.info(f"Processing count for user {user_id} is already 0")
+            logger.info("Processing count is already 0", user_id=user_id)
 
 
 manager = ConnectionManager()
@@ -147,7 +160,7 @@ async def read_root(request: Request, settings: Settings = Depends(get_settings)
     """Render the main index page.
 
     Uses Jinja2 template rendering instead of serving a static file so that we
-    can progressively migrate to server‑side rendering with HTMX and Alpine.js
+    can progressively migrate to server-side rendering with HTMX and Alpine.js
     in the frontend.
     """
     # Get settings via dependency injection
@@ -158,6 +171,7 @@ async def read_root(request: Request, settings: Settings = Depends(get_settings)
         {
             "request": request,
             "env": "dev", # TODO: Make this dynamic based on actual environment?
+            "auth_billing_enabled": settings.auth_billing_enabled,
             # Pass Cognito settings from the Settings object
             "cognito_user_pool_id": settings.cognito_user_pool_id or "",
             "cognito_app_client_id": settings.cognito_app_client_id or "",
@@ -247,7 +261,7 @@ def create_or_update_profile_endpoint(
     user_id = current_user.id
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
-        user = crud.create_user(db=db, user=schemas.UserCreate(email=current_user.email))
+        user = crud.create_user(db=db, user=schemas.UserCreate(email=current_user.email, cognito_sub=current_user.email))
     crud.create_or_update_user_profile(db=db, user_id=user_id, profile=profile)
     profile_json_str = crud.get_user_profile(db=db, user_id=user_id)
     if profile_json_str is None:
@@ -276,7 +290,7 @@ async def upload_resume_endpoint(
     profile_data = await logic.parse_resume_with_llm(resume_text)
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
-        user = crud.create_user(db=db, user=schemas.UserCreate(email=current_user.email))
+        user = crud.create_user(db=db, user=schemas.UserCreate(email=current_user.email, cognito_sub=current_user.email))
     profile = schemas.UserProfileCreate(profile_data=profile_data)
     crud.create_or_update_user_profile(db=db, user_id=user_id, profile=profile)
     response_data = {
@@ -367,9 +381,20 @@ async def delete_job_endpoint(
 
 
 # --- Endpoint to save job from Chrome Extension --- #
+from aws_embedded_metrics import metric_scope
+
+@metric_scope
 async def process_job_in_background(
-    user_id: int, markdown_content: str, manager: ConnectionManager, db_session_override: Session | None = None
+    user_id: int,
+    markdown_content: str,
+    manager: ConnectionManager,
+    db_session_override: Session | None = None,
+    metrics=None,
 ):
+    metrics.set_namespace("GreatFitJobs")
+    metrics.put_metric("jobs_submitted", 1, "Count")
+    metrics.set_property("user_id", user_id)
+    job_id = None
     """Background task to process a job description. Can use an override session for testing."""
     db_session: Session | None = None # Initialize
     job_id: int | None = None # To store the job ID once created
@@ -389,7 +414,8 @@ async def process_job_in_background(
         if not user:
             raise Exception(f"User {user_id} not found.") # Should not happen if called via authenticated route
 
-        if user.credits <= 0:
+        from settings import get_settings
+        if get_settings().auth_billing_enabled and user.credits <= 0:
             logger.warning(f"User {user_id} has insufficient credits ({user.credits}) to save job.")
             await manager.send_personal_message(
                 {"error": "Insufficient Credits", "message": "You need more credits to save a new job.", "credits_needed": 1},
@@ -406,24 +432,8 @@ async def process_job_in_background(
         )
         logger.info(f"BG Task: Markdown cleaned for user {user_id}")
 
-        # --- 2. Rank Job --- #
-        logger.info(f"BG Task: Ranking job for user {user_id}")
-        score, explanation = await logic.rank_job_with_llm(
-            db=db_session, job_id=None, user_id=user_id, job_description=cleaned_data.cleaned_markdown
-        )
-        if score is None or explanation is None:
-            # Log error but continue to tailoring if possible
-            logger.error(
-                f"BG Task: Failed to rank job. Proceeding without ranking."
-            )
-            score = None
-            explanation = None
-        else:
-            logger.info(f"BG Task: Job ranked. Score: {score}")
-
-        # --- 3. Create Initial Job Record --- #
-        logger.info(f"BG Task: Creating initial job record for user {user_id}")
-        # db_session = SessionLocal() # Session already started
+        # --- 2. Create initial job record (no score yet) --- #
+        logger.info("BG: creating job row")
         db_job = crud.create_job(
             db=db_session,
             user_id=user_id,
@@ -431,25 +441,54 @@ async def process_job_in_background(
                 title=cleaned_data.title,
                 company=cleaned_data.company,
                 description=cleaned_data.cleaned_markdown,
-                ranking_score=score,
-                ranking_explanation=explanation,
             ),
         )
         db_session.commit()
         db_session.refresh(db_job)
         job_id = db_job.id
-        logger.info(
-            f"BG Task: Initial job record created (ID: {job_id}) for user {user_id}"
-        )
+        metrics.set_property("job_id", job_id)
+        logger.info("BG: created job row", job_id=job_id)
 
-        # Prepare data for SSE event
-        created_job_data = schemas.Job.model_validate(db_job).model_dump()
+        # --- 2a. Send initial 'job_created' SSE immediately so UI can render pending card --- #
+        initial_job_data = {
+            "id": db_job.id,
+            "title": db_job.title,
+            "company": db_job.company,
+            "description": db_job.description,
+            "user_id": user_id,
+        }
+        await manager.send_personal_message(initial_job_data, user_id, event="job_created")
+        logger.info(f"BG Task: Sent initial 'job_created' SSE for job {job_id}")
 
-        # --- 4. Send 'job_created' SSE --- #
-        await manager.send_personal_message(
-            created_job_data, user_id, event="job_created"
+        # --- 3. Rank job now that ID exists --- #
+        logger.info("BG: ranking job")
+        score, explanation = await logic.rank_job_with_llm(
+            db=db_session, job_id=db_job.id, user_id=user_id
         )
-        logger.info(f"BG Task: Sent 'job_created' SSE for job {job_id}")
+        if score is not None:
+            db_job.ranking_score = score
+            db_job.ranking_explanation = explanation
+            db_session.commit()
+            logger.info(f"BG: updated job {job_id} with ranking score {score}")
+
+            # --- Send 'job_ranked' SSE so UI can update score/explanation incrementally --- #
+            await manager.send_personal_message(
+                {"job_id": job_id, "score": score, "explanation": explanation},
+                user_id,
+                event="job_ranked",
+            )
+            logger.info(f"BG Task: Sent 'job_ranked' SSE for job {job_id}")
+        else:
+            logger.warning("BG: ranking failed", job_id=job_id)
+            await manager.send_personal_message(
+                {
+                    "job_id": job_id,
+                    "error": "ranking_failed",
+                    "message": "Failed to rank job description",
+                },
+                user_id,
+                event="job_error",
+            )
 
         # --- 5. Generate Tailoring Suggestions --- #
         logger.info(f"BG Task: Generating tailoring suggestions for job {job_id}")
@@ -472,16 +511,32 @@ async def process_job_in_background(
             user_to_update.credits -= 1 # Deduct credit here
             # db_session.add(user_to_update) # No need to add if fetched via session.get
             db_session.commit() # Commit all changes (job updates + credit deduction)
+            metrics.put_metric("jobs_completed", 1, "Count")
             logger.info(f"BG Task: Final updates committed for job {job_id} (including credit deduction)")
 
             # Send SSE after successful commit
             await manager.send_personal_message(
-                {"job_id": job_id, "status": "tailored"}, user_id, event="job_tailored"
+                {
+                    "job_id": job_id,
+                    "status": "tailored",
+                    "suggestions": suggestions,
+                },
+                user_id,
+                event="job_tailored",
             )
             logger.info(f"BG Task: Sent 'job_tailored' SSE for job {job_id}")
         else:
             # If tailoring fails, still need to commit the job creation and credit deduction
-            logger.warning(f"BG Task: Tailoring suggestions failed for job {job_id}. Committing job creation and credit deduction.")
+            logger.warning("BG Task: Tailoring suggestions failed", job_id=job_id)
+            await manager.send_personal_message(
+                {
+                    "job_id": job_id,
+                    "error": "tailoring_failed",
+                    "message": "Failed to generate tailoring suggestions",
+                },
+                user_id,
+                event="job_error",
+            )
             # Re-fetch user right before modification here as well
             user_to_update = db_session.get(models.User, user_id)
             if not user_to_update:
@@ -492,6 +547,7 @@ async def process_job_in_background(
             db_session.commit()
 
     except openai.ContentFilterFinishReasonError as cf_error:
+        metrics.put_metric("jobs_failed", 1, "Count")
         print("EXCEPTION cf_error IN BG TASK:\n", "".join(traceback.format_exception(e)), file=sys.stderr)
         logger.error(
             f"BG Task: Content filter error processing job for user {user_id}: {cf_error}",
@@ -543,20 +599,37 @@ async def process_job_in_background(
 
     finally:
         logger.info(f"Background job processing finished for user {user_id}.")
+        # Decrement processing count now that background task is finished
+        try:
+            await manager.decrement_processing_count(user_id)
+        except Exception as pc_err:
+            logger.error("Failed to decrement processing count", user_id=user_id, exc_info=True)
         if session_created_internally and db_session:
             db_session.close()
             logger.info("BG Task: Closed internally created DB session.")
 
 @app.post("/jobs/markdown", status_code=status.HTTP_202_ACCEPTED)
 async def create_job_from_markdown(
-    markdown_content: str,
+    markdown_request: schemas.JobMarkdownRequest,  # expects {"markdown_content": "..."}
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Endpoint to create a new job from markdown content."""
+    logger = structlog.get_logger(__name__)
     user_id = current_user.id
+
+    markdown_content = markdown_request.markdown_content.strip()
+    if not markdown_content:
+        logger.warning("Empty markdown_content received", user_id=user_id)
+        raise HTTPException(status_code=422, detail="markdown_content cannot be empty")
+
+    logger.info("Received job markdown", markdown_length=len(markdown_content), user_id=user_id)
+
+    # Increment processing counter + launch background task
     await manager.increment_processing_count(user_id)
     await process_job_in_background(user_id, markdown_content, manager)
+
+    logger.info("Job accepted for processing", user_id=user_id)
     return {"status": "accepted"}
 
 
@@ -591,6 +664,41 @@ async def rank_job_endpoint(
 @app.post(
     "/jobs/tailor-suggestions", response_model=schemas.TailoringResponse
 )
+@app.post("/jobs/from_extension")
+@app.post("/jobs/from_extension", response_model=schemas.Job)
+async def create_job_from_extension(
+    raw_job_input: schemas.RawJobInput = Body(...),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new job from the extension using raw job description and LLM parsing.
+    """
+    try:
+        # Parse the raw job description using LLM
+        parsed = await logic.parse_job_description_with_llm(raw_job_input.raw_description)
+        # Validate parsed result
+        if not parsed or not all(parsed.get(k) for k in ("title", "company", "description")):
+            raise HTTPException(
+                status_code=422,
+                detail="Failed to extract required fields (title, company, description) from job description."
+            )
+        job_create = schemas.JobCreate(
+            title=parsed["title"],
+            company=parsed["company"],
+            description=parsed["description"],
+        )
+        job = crud.create_job(db, job=job_create, user_id=current_user.id)
+        await manager.send_personal_message(
+            schemas.Job.model_validate(job).model_dump(),
+            current_user.id,
+            event="job_created",
+        )
+        return job
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create job: {str(e)}")
 async def get_tailoring_suggestions_endpoint(
     request_data: schemas.TailoringRequest,
     current_user: models.User = Depends(get_current_user),
@@ -791,14 +899,39 @@ async def stripe_webhook(
 
 
 # --- SSE Endpoint --- #
+from auth import verify_token  # already present
+from database import SessionLocal
+
 @app.get("/stream-jobs")
-async def stream_jobs(
-    request: Request,
-    current_user: models.User = Depends(get_current_user),
-    token: str | None = None,
-):
+async def stream_jobs(request: Request, token: str | None = None, user_id: int | None = None):
     """Endpoint for Server-Sent Events to stream new job updates."""
-    user_id = current_user.id
+    logger = structlog.get_logger("uvicorn.error")
+    settings = get_settings()
+    if token:
+        try:
+            payload = verify_token(token)
+            with SessionLocal() as db:
+                import crud  # avoid circular import at top
+                user = crud.get_user_by_email(db, payload.email or payload.sub)
+                if not user:
+                    logger.warning("SSE 401: Unknown user in token", extra={"token": token})
+                    raise HTTPException(401, "Unknown user in token")
+                user_id = user.id
+                logger.info("SSE auth ok", extra={"user_id": user_id})
+        except Exception as e:
+            logger.warning(f"SSE 401: Token verification failed: {e}", extra={"token": token})
+            raise HTTPException(401, "Invalid or expired token")
+    else:
+        if settings.auth_billing_enabled:
+            # In auth-enabled mode, token is mandatory
+            logger.warning("SSE 401: No token provided while auth is enabled")
+            raise HTTPException(401, "No token provided")
+        # Auth disabled (local dev) – allow connecting via user_id query param
+        if user_id is None:
+            logger.warning("SSE 401: Missing user_id in local mode")
+            raise HTTPException(401, "user_id query parameter required in local mode")
+        # In local mode, trust the provided user_id
+        logger.info("SSE local mode auth ok", extra={"user_id": user_id})
     queue = await manager.connect(user_id)
     async def event_generator():
         try:

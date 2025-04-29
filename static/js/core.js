@@ -1,4 +1,15 @@
 /**
+ * Alpine.js global data provider for navigation bar
+ * Ensures x-data="authFlow()" works immediately on page load
+ */
+function authFlow() {
+  return {
+    authBillingEnabled: window.AUTH_BILLING_ENABLED,
+    isLoggedIn: localStorage.getItem('isLoggedIn') === 'true',
+    creditBalance: '--'
+  };
+}
+/**
  * core.js - Core initialization and setup
  * Contains the main initialization logic and event binding
  */

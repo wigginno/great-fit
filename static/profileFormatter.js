@@ -174,7 +174,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         .section-content {
             padding: 10px 0 5px 15px;
-            color: #374151; /* Gray‑700 for readability */
+            color: #374151; /* Gray-700 for readability */
         }
         .section-content, .section-content h3, .section-content li, .section-content p {
             color: #374151;

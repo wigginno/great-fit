@@ -1,6 +1,6 @@
 import hashlib
 import functools
-import logging
+import structlog
 from sqlalchemy.orm import Session
 from typing import Any
 import fastapi
@@ -15,10 +15,45 @@ from llm_interaction import (
     call_llm_for_resume_parsing,
     call_llm_to_clean_job_description,
 )
+from llm_interaction import call_llm, MODEL_CONFIG
 import crud
 
 # Set up logging
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+import asyncio
+
+async def parse_job_description_with_llm(raw_description: str) -> dict[str, str]:
+    """
+    Extract `title`, `company`, and `description` from an unstructured job posting.
+
+    Returns
+    -------
+    dict[str, str]  • keys: title, company, description
+    Raises
+    ------
+    ValueError      • if any required field is missing
+    """
+    system_prompt = (
+        "You are a strictly-formatted information extractor. "
+        "Read the following job posting and return **only** JSON with exactly three "
+        "string properties: `title`, `company`, `description`. "
+        "Do not add, rename, omit, or nest keys. Preserve description paragraphs."
+    )
+    user_prompt = f"{raw_description}"
+    # Clean job description using LLM parse endpoint
+    cleaned = await call_llm_to_clean_job_description_cached(raw_description)
+    if not cleaned or not (cleaned.title and cleaned.company and cleaned.cleaned_markdown):
+        raise fastapi.HTTPException(
+            status_code=422,
+            detail="Failed to extract required fields (title, company, description) from job description."
+        )
+    return {
+        "title": cleaned.title,
+        "company": cleaned.company,
+        "description": cleaned.cleaned_markdown,
+    }
 
 # Simple LLM response cache to reduce API calls
 _LLM_CACHE = {}
@@ -74,11 +109,11 @@ async def clean_job_description(
 
 
 async def rank_job_with_llm(db: Session, job_id: int, user_id: int):
-    logger.info(f"Ranking job {job_id} for user {user_id}")
+    logger.info("Ranking job", job_id=job_id, user_id=user_id)
 
     db_job = crud.get_job(db, job_id=job_id, user_id=user_id)
     if not db_job:
-        logger.error(f"Job {job_id} not found for user {user_id}")
+        logger.error("Job not found for user", job_id=job_id, user_id=user_id)
         return None, None
 
     profile_json_string = crud.get_user_profile(db, user_id=user_id)
@@ -94,10 +129,10 @@ async def rank_job_with_llm(db: Session, job_id: int, user_id: int):
         db, job_id=job_id, user_id=user_id, score=score, explanation=explanation
     )
     if not updated_job:
-        logger.error(f"Failed to update job ranking in DB for job {job_id}")
+        logger.error("Failed to update job ranking in DB", job_id=job_id)
         return None, None
 
-    logger.info(f"Successfully ranked job {job_id} for user {user_id}. Score: {score}")
+    logger.info("Successfully ranked job", job_id=job_id, user_id=user_id, score=score)
     return score, explanation
 
 

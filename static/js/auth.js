@@ -32,6 +32,9 @@ function configureAmplify() {
 // --- Global State & Helpers ---
 window.currentUserId = null; // Will be set after successful auth
 window.authHeaders = async () => {
+  if (window.AUTH_BILLING_ENABLED === false) {
+    return {};
+  }
   try {
     // Amplify automatically refreshes tokens if needed
     const session = await Auth.currentSession();
@@ -45,6 +48,27 @@ window.authHeaders = async () => {
 
 // --- Core Auth Logic ---
 async function checkAuthState() {
+  if (window.AUTH_BILLING_ENABLED === false) {
+    // Local development mode: backend auto-creates a default user. Fetch it so
+    // the frontend knows the user_id, enabling profile and job loading after a page refresh.
+    try {
+      const res = await fetch('/users/me'); // No auth header needed in local mode
+      if (res.ok) {
+        const user = await res.json();
+        window.currentUserId = user.id;
+        console.log('Local mode: User ID set to', window.currentUserId);
+        // Establish SSE connection once the user ID is known
+        if (typeof connectToSSE === 'function') connectToSSE(window.currentUserId);
+      } else {
+        console.error('Local mode: Failed to fetch /users/me', await res.text());
+      }
+    } catch (err) {
+      console.error('Local mode: Error fetching /users/me', err);
+    }
+    renderAuthNav(false, false);
+    return;
+  }
+
   const authEnabled = configureAmplify();
   if (!authEnabled) {
     // Auth disabled - try to fetch user info assuming local mode

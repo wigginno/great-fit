@@ -15,8 +15,15 @@ def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.email == email).first()
 
 
+import uuid
+
 def create_user(db: Session, user: schemas.UserCreate):
-    db_user = models.User(email=user.email)
+    db_user = models.User(
+        email=user.email,
+        cognito_sub=user.cognito_sub or f"local-{uuid.uuid4()}",
+        credits=10,
+        profile_json=None,
+    )
     db.add(db_user)
     db.flush()  # Assign ID without committing
     db.refresh(db_user)
@@ -49,9 +56,7 @@ def create_or_update_user_profile(
 
 # --- Job CRUD ---
 def create_job(db: Session, job: schemas.JobCreate, user_id: int):
-    """Creates a new job entry associated with a user, including score and explanation if provided in the schema."""
-    # Note: The schema might use different names (e.g., ranking_score)
-    # Map them to the model's field names (score, explanation)
+    """Creates a new job entry associated with a user, using ranking_score and ranking_explanation only."""
     db_job = models.Job(
         user_id=user_id,
         owner_id=user_id,
@@ -59,8 +64,8 @@ def create_job(db: Session, job: schemas.JobCreate, user_id: int):
         company=job.company,
         description=job.description,
         tailoring_suggestions=getattr(job, "tailoring_suggestions", None),
-        score=getattr(job, "ranking_score", None),
-        explanation=getattr(job, "ranking_explanation", None),
+        ranking_score=getattr(job, "ranking_score", None),
+        ranking_explanation=getattr(job, "ranking_explanation", None),
     )
     db.add(db_job)
     db.flush()

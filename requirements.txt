@@ -38,3 +38,5 @@ python-jose[cryptography]
 
 # Payment
 stripe
+
+structlog

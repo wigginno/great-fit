@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     stripe_price_id_50_credits: Optional[str] = None
 
     # Add other settings variables here as needed
+
+    # Toggle for authentication and billing (default: enabled)
+    auth_billing_enabled: bool = True
+
     # Application base URL (for constructing callback URLs etc.)
     app_base_url: str = "http://localhost:8000"  # Default for local dev
 

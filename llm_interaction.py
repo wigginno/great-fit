@@ -1,8 +1,9 @@
 import re
 import logging
+import structlog
 from typing import Optional, Union
 from openai import AsyncOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from settings import get_settings
 from schemas import (
     ResumeData,
@@ -14,7 +15,7 @@ from schemas import (
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Load settings
 settings = get_settings()
@@ -157,7 +158,7 @@ If the resume DOES NOT have a dedicated section for skills, infer the skills fro
     )
     parsed_data = response
 
-    logger.info("Successfully parsed resume.")
+    logger.info("Successfully parsed resume")
     return parsed_data
 
 
