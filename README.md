@@ -8,7 +8,7 @@ A full-stack web application that leverages Large Language Models (LLMs) to anal
 
 | Area          | Capability                                                                                                                               |
 | :------------ | :--------------------------------------------------------------------------------------------------------------------------------------- |
-| **Resume**    | • Upload PDF/DOCX/TXT and extract structured profile using LLM <br>• View profile in collapsible UI sections                               |
+| **Resume**    | • Upload PDF and extract structured profile using LLM <br>• View profile in collapsible UI sections                               |
 | **Jobs**      | • Add jobs by pasting full description (LLM extracts title/company/details) <br>• View, select, delete saved jobs <br>• Automatic background ranking & tailoring upon adding a job |
 | **Analysis**  | • Match scoring (0-10) with color scale <br>• Detailed LLM explanation for the score <br>• LLM-generated suggestions for tailoring your resume/profile |
 | **Real-time** | • Server-Side Events (SSE) stream job processing status (ranking, tailoring) and updates processing indicators                           |
@@ -19,12 +19,16 @@ A full-stack web application that leverages Large Language Models (LLMs) to anal
 
 ---
 
+## ▶️ Demo
+
+https://github.com/user-attachments/assets/e503475b-6303-4ab0-b3ed-64473afce8a0
+
 ## 🏗 Tech Stack
 
 | Layer         | Tech                                                                                                                                                              |
 | :------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Backend**   | **Python 3.11** · **FastAPI** · SQLAlchemy (ORM) · Alembic (Migrations) · Pydantic (Validation) · `structlog` (Logging)                                            |
-| **LLM**       | [`openai`](https://github.com/openai/openai-python) client via **OpenRouter** API · [`instructor`](https://github.com/jxnl/instructor) for structured output (JSON) |
+| **LLM**       | [`openai`](https://github.com/openai/openai-python) client via **OpenRouter** API |
 | **Database**  | PostgreSQL (Production via AWS RDS) · SQLite (Local Dev/Testing)                                                                                                  |
 | **Real-time** | Server-Sent Events (SSE) via `sse-starlette`                                                                                                                      |
 | **Frontend**  | **Tailwind CSS 4** (CLI build) · **Alpine.js** · **HTMX** · Jinja2 Templates · Vanilla JS Modules                                                                   |
