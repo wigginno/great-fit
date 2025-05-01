@@ -94,7 +94,7 @@ class GreatFitInfraStack(Stack):
         ).to_string()
         cognito_domain_string = cognito_domain_secret.secret_value_from_json(
             "GF_COGNITO_DOMAIN"
-        ).tostring()
+        ).to_string()
 
         # RDS Aurora PostgreSQL Serverless v2 cluster
         cluster = rds.DatabaseCluster(
