@@ -128,10 +128,9 @@ class GreatFitInfraStack(Stack):
         )
 
         # --- App Runner Service --- #
-
-        # Secret holding external API key (must exist beforehand)
-        openrouter_secret_name = os.getenv("OPENROUTER_SECRET_NAME", "OPENROUTER_API_KEY")
-        openrouter_secret = sm.Secret.from_secret_name_v2(self, "OpenRouterSecret", openrouter_secret_name)
+        openrouter_secret = sm.Secret.from_secret_name_v2(self, "OpenRouterSecretLookup", "greatfit/openrouter/apikey")
+        stripe_secret_key = sm.Secret.from_secret_name_v2(self, "StripeSecretKeyLookup", "greatfit/stripe/secretkey")
+        stripe_price_id_50_secret = sm.Secret.from_secret_name_v2(self, "StripePrice50Lookup", "greatfit/stripe/price_id_50_credits")
 
         # Instance role to allow reading secrets
         instance_role = iam.Role(
@@ -141,6 +140,8 @@ class GreatFitInfraStack(Stack):
         )
         db_secret.grant_read(instance_role)
         openrouter_secret.grant_read(instance_role)
+        stripe_secret_key.grant_read(instance_role)
+        stripe_price_id_50_secret.grant_read(instance_role)
         user_pool_id_secret.grant_read(instance_role)
         user_pool_arn_secret.grant_read(instance_role)
         user_pool_client_id_secret.grant_read(instance_role)
@@ -220,7 +221,13 @@ class GreatFitInfraStack(Stack):
                             db_secret, field="password"
                         ),
                         "OPENROUTER_API_KEY": apprunner.Secret.from_secrets_manager(
-                            openrouter_secret
+                            openrouter_secret, field="OPENROUTER_API_KEY"
+                        ),
+                        "STRIPE_SECRET_KEY": apprunner.Secret.from_secrets_manager(
+                            stripe_secret_key, field="STRIPE_SECRET_KEY"
+                        ),
+                        "STRIPE_PRICE_ID_50_CREDITS": apprunner.Secret.from_secrets_manager(
+                            stripe_price_id_50_secret, field="STRIPE_PRICE_ID_50_CREDITS"
                         ),
                     },
                 ),
