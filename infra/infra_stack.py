@@ -77,6 +77,11 @@ class GreatFitInfraStack(Stack):
             "UserPoolClientIdSecretLookup",
             "greatfit/userpool/clientid"
         )
+        cognito_domain_secret = sm.Secret_from_secret_name_v2(
+            self,
+            "CognitoDomainSecretLookup",
+            "greatfit/cognito/domain"
+        )
 
         user_pool_id_string = user_pool_id_secret.secret_value_from_json(
             "GF_USER_POOL_ID"
@@ -87,6 +92,9 @@ class GreatFitInfraStack(Stack):
         user_pool_client_id_string = user_pool_client_id_secret.secret_value_from_json(
             "GF_USER_POOL_CLIENT_ID"
         ).to_string()
+        cognito_domain_string = cognito_domain_secret.secret_value_from_json(
+            "GF_COGNITO_DOMAIN"
+        ).tostring()
 
         # RDS Aurora PostgreSQL Serverless v2 cluster
         cluster = rds.DatabaseCluster(
@@ -204,6 +212,8 @@ class GreatFitInfraStack(Stack):
                         "AWS_REGION": self.region,
                         "COGNITO_USER_POOL_ID": user_pool_id_string,
                         "COGNITO_APP_CLIENT_ID": user_pool_client_id_string,
+                        "COGNITO_DOMAIN": cognito_domain_string,
+                        "AUTH_BILLING_ENABLED": "true",
                     },
                     environment_secrets={
                         "DB_PASSWORD": apprunner.Secret.from_secrets_manager(
@@ -231,7 +241,8 @@ class GreatFitInfraStack(Stack):
         # Cognito outputs
         CfnOutput(self, "UserPoolId", value=user_pool_id_string)
         CfnOutput(self, "UserPoolClientId", value=user_pool_client_id_string)
-        CfnOutput(self, "CognitoDomainUrl", value="https://login.greatfit.app")
+        # Ensure this output value matches the domain you are passing to the environment variable
+        CfnOutput(self, "CognitoDomainUrl", value=f"https://{cognito_domain_value}")
 
         # --- Monitoring & Alarms --- #
         # SNS topic for alarm notifications (add your email via env var ALERT_EMAIL or manually)

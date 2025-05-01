@@ -45,6 +45,8 @@ from request_id_middleware import RequestIdMiddleware
 init_observability()
 logger = structlog.get_logger(__name__)
 
+logging.warning(f"AUTH_BILLING_ENABLED setting is: {get_settings().auth_billing_enabled}")
+
 # Create DB tables on startup
 create_db_and_tables()
 
