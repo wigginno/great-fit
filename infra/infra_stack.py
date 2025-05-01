@@ -77,7 +77,7 @@ class GreatFitInfraStack(Stack):
             "UserPoolClientIdSecretLookup",
             "greatfit/userpool/clientid"
         )
-        cognito_domain_secret = sm.Secret_from_secret_name_v2(
+        cognito_domain_secret = sm.Secret.from_secret_name_v2(
             self,
             "CognitoDomainSecretLookup",
             "greatfit/cognito/domain"
