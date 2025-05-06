@@ -9,7 +9,7 @@ async function loadProfile() {
     // Use currentUserId globally
     const userId = window.currentUserId;
 
-    const response = await fetch(`/profile/`, { headers: { ...window.authHeaders() } });
+    const response = await fetch(`/profile/`, { headers: await window.authHeaders() });
 
     if (response.status === 204) {
       // No profile yet — keep upload UI visible
@@ -18,6 +18,16 @@ async function loadProfile() {
     }
 
     if (!response.ok) {
+      // Handle auth errors specifically
+      if (response.status === 401 || response.status === 403) {
+        console.error(`Authentication error (${response.status}) accessing /profile/. Redirecting to login.`);
+        showToast("Your session may have expired. Please sign in again.", "error");
+        window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
+        Auth.federatedSignIn(); // Redirect to login
+        return; // Stop further processing
+      }
+
+      // Handle other HTTP errors
       let msg = `HTTP error! status: ${response.status}`;
       try {
         const errJson = await response.json();

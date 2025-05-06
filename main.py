@@ -62,7 +62,15 @@ db_write_semaphore = asyncio.Semaphore(1)
 
 # --- CORS Middleware --- Set up CORS
 # Allow all origins for PoC purposes
-origins = ["*"]
+# TODO: Replace with specific origins for production
+origins = [
+    "http://localhost", # Add your local dev origin if different
+    "http://localhost:8000", # Example if frontend runs on 8000
+    "http://127.0.0.1",
+    "http://127.0.0.1:8000",
+    "https://greatfit.app", # Assuming this is your production frontend
+    # Add other origins as needed
+]
 
 app.add_middleware(
     CORSMiddleware,
@@ -159,7 +167,6 @@ manager = ConnectionManager()
 async def read_root(
     request: Request,
     settings: Settings = Depends(get_settings),
-    current_user: models.User = Depends(get_current_user) # <-- ADD THIS DEPENDENCY
 ):
     """Render the main index page.
 
