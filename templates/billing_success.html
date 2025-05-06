@@ -91,11 +91,19 @@
                     console.log(`Polling attempt ${this.attempt}/${this.maxAttempts}`);
 
                     try {
-                        const response = await fetch('/users/me', { headers: window.authHeaders() });
+                        const response = await fetch('/users/me', { headers: await window.authHeaders() });
                         if (!response.ok) {
-                            if (response.status === 401) {
-                                throw new Error('Authentication failed. Please log in again.');
+                            // Handle auth errors specifically
+                            if (response.status === 401 || response.status === 403) {
+                                console.error(`Authentication error (${response.status}) accessing /users/me. Redirecting to login.`);
+                                // Can't use showToast directly here as it's not defined globally, set error message instead
+                                this.errorMessage = 'Your session may have expired. Please sign in again.';
+                                this.isLoading = false;
+                                window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
+                                Auth.federatedSignIn(); // Redirect to login
+                                return; // Stop polling
                             }
+                            // Handle other HTTP errors
                             throw new Error(`Server error: ${response.status}`);
                         }
                         const userData = await response.json();

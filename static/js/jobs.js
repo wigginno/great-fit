@@ -10,9 +10,18 @@ async function loadJobs() {
     const jobsContainer = document.getElementById("jobsList");
     jobsContainer.innerHTML = "Loading jobs...";
 
-    const response = await fetch(`/jobs/`, { headers: { ...window.authHeaders() } });
+    const response = await fetch(`/jobs/`, { headers: await window.authHeaders() });
 
     if (!response.ok) {
+      // Handle auth errors specifically
+      if (response.status === 401 || response.status === 403) {
+        console.error(`Authentication error (${response.status}) accessing /jobs/. Redirecting to login.`);
+        showToast("Your session may have expired. Please sign in again.", "error");
+        window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
+        Auth.federatedSignIn(); // Redirect to login
+        return; // Stop further processing
+      }
+      // Handle other HTTP errors
       const errorData = await response.json();
       throw new Error(
         errorData.detail || `HTTP error! status: ${response.status}`,
@@ -141,7 +150,7 @@ async function saveModalJob() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...window.authHeaders(),
+        ...(await window.authHeaders()),
       },
       body: JSON.stringify(payload),
     });
@@ -149,6 +158,16 @@ async function saveModalJob() {
     console.log("POST /jobs/markdown response status:", response.status);
 
     if (!response.ok) {
+      // Handle auth errors specifically
+      if (response.status === 401 || response.status === 403) {
+        console.error(`Authentication error (${response.status}) accessing /jobs/markdown. Redirecting to login.`);
+        showToast("Your session may have expired. Please sign in again.", "error");
+        window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
+        Auth.federatedSignIn(); // Redirect to login
+        // Re-enable buttons and hide loading in finally block
+        throw new Error(`Authentication error: ${response.status}`); // Throw to trigger finally
+      }
+      // Handle other HTTP errors
       let errorText = `HTTP error! status: ${response.status}`;
       try {
         const errorData = await response.json();
@@ -252,9 +271,18 @@ async function showJobDetails(jobId, userId) {
 
     jobDetailsContainer.innerHTML = '<div class="loading-spinner-container"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
 
-    const response = await fetch(`/jobs/${jobId}`, { headers: { ...window.authHeaders() } });
+    const response = await fetch(`/jobs/${jobId}`, { headers: await window.authHeaders() });
 
     if (!response.ok) {
+      // Handle auth errors specifically
+      if (response.status === 401 || response.status === 403) {
+        console.error(`Authentication error (${response.status}) accessing /jobs/${jobId}. Redirecting to login.`);
+        showToast("Your session may have expired. Please sign in again.", "error");
+        window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
+        Auth.federatedSignIn(); // Redirect to login
+        return; // Stop further processing
+      }
+      // Handle other HTTP errors
       const errorData = await response.json();
       throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
     }
@@ -385,10 +413,19 @@ async function deleteJob(jobId) {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
-        ...window.authHeaders(),
+        ...(await window.authHeaders()),
       },
     });
     if (!res.ok) {
+      // Handle auth errors specifically
+      if (res.status === 401 || res.status === 403) {
+        console.error(`Authentication error (${res.status}) deleting /jobs/${jobId}. Redirecting to login.`);
+        showToast("Your session may have expired. Please sign in again.", "error");
+        window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
+        Auth.federatedSignIn(); // Redirect to login
+        throw new Error(`Authentication error: ${res.status}`); // Throw to trigger catch block
+      }
+      // Handle other HTTP errors
       const err = await res.json();
       throw new Error(err.detail || 'Failed to delete job');
     }

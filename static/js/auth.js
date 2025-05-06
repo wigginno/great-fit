@@ -35,6 +35,10 @@ window.authHeaders = async () => {
   if (window.AUTH_BILLING_ENABLED === false) {
     return {};
   }
+  if (window.location.search.includes('code=')) {
+    // let Amplify exchange the code first
+    await new Promise(r => setTimeout(r, 800));
+  }
   try {
     // Amplify automatically refreshes tokens if needed
     const session = await Auth.currentSession();
@@ -95,9 +99,9 @@ async function checkAuthState() {
   try {
     const user = await Auth.currentAuthenticatedUser();
     const session = await Auth.currentSession(); // Ensure session is valid
-    const cognitoUser = await Auth.currentUserInfo();
-    window.currentUserId = cognitoUser.attributes.sub; // Use Cognito 'sub' as ID
-    console.log('User authenticated via Amplify:', cognitoUser.attributes);
+    const idPayload   = (await Auth.currentSession()).getIdToken().decodePayload();
+    window.currentUserId = idPayload.sub;
+    console.log('User authenticated via Amplify (from idToken):', idPayload);
     renderAuthNav(true, true); // Render as logged in, auth enabled
 
     // Now fetch our internal user record (to ensure it exists/create if needed)

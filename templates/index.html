@@ -142,7 +142,6 @@
       authBillingEnabled: window.AUTH_BILLING_ENABLED,
       async init() {
         console.log('Auth flow initializing...');
-        await this.configureAmplify();
         await this.checkAuthState();
         if (this.isLoggedIn) {
           await this.fetchUserData(); // Fetch user data including credits
@@ -177,29 +176,6 @@
             localStorage.removeItem('refresh_token');
             window.currentUserId = null; // Clear global user ID
         });
-      },
-      async configureAmplify() {
-        // ... (existing configureAmplify code)
-        if (window.COGNITO_USER_POOL_ID && window.COGNITO_APP_CLIENT_ID && window.AWS_REGION) {
-            console.log('Configuring Amplify Auth...');
-            Amplify.configure({
-                Auth: {
-                    region: window.AWS_REGION,
-                    userPoolId: window.COGNITO_USER_POOL_ID,
-                    userPoolWebClientId: window.COGNITO_APP_CLIENT_ID,
-                    oauth: {
-                        domain: window.COGNITO_DOMAIN.replace('https://', ''), // Remove https://
-                        scope: ['email', 'openid', 'profile'],
-                        redirectSignIn: window.location.origin,
-                        redirectSignOut: window.location.origin,
-                        responseType: 'token' // Use 'token' for Implicit Grant (id_token in hash)
-                    }
-                }
-            });
-            console.log('Amplify Auth configured.');
-        } else {
-            console.log('Cognito environment variables not set. Amplify Auth not configured.');
-        }
       },
       async checkAuthState() {
         // ... (existing checkAuthState code)
@@ -269,10 +245,21 @@
           try {
               const response = await fetch('/billing/checkout-session', {
                   method: 'POST',
-                  headers: window.authHeaders()
+                  headers: await window.authHeaders()
               });
               if (!response.ok) {
-                   const errorData = await response.json();
+                  // Handle auth errors specifically
+                  if (response.status === 401 || response.status === 403) {
+                      console.error(`Authentication error (${response.status}) accessing /billing/checkout-session. Redirecting to login.`);
+                      if (window.showToast) {
+                          window.showToast("Your session may have expired. Please sign in again.", "error");
+                      }
+                      window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
+                      Auth.federatedSignIn(); // Redirect to login
+                      return; // Stop further processing
+                  }
+                  // Handle other HTTP errors
+                   const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` })); // Add catch for non-JSON errors
                    throw new Error(errorData.detail || 'Failed to create Stripe checkout session');
               }
               const session = await response.json();

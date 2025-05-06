@@ -104,6 +104,7 @@ def _verify_token(token: str) -> TokenPayload:
             algorithms=["RS256"],
             audience=settings.client_id,
             issuer=settings.issuer,
+            options={"verify_at_hash": False},
         )
         return TokenPayload.model_validate(payload)
     except JWTError as exc:
@@ -141,6 +142,11 @@ async def get_current_user(
     # Upsert user in DB
     user = crud.get_user_by_email(db, payload.email or payload.sub)
     if not user:
-        user = crud.create_user(db, crud.schemas.UserCreate(email=payload.email or payload.sub))
+        user = crud.create_user(
+            db,
+            crud.schemas.UserCreate(
+                email=payload.email or payload.sub, cognito_sub=payload.sub
+            ),
+        )
         db.commit()
     return user
