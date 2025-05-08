@@ -379,17 +379,24 @@ async def delete_job_endpoint(
     db: Session = Depends(get_db),
 ):
     user_id = current_user.id
+    logger.info(f"Attempting to delete job {job_id} for user {user_id}")
     success = crud.delete_job(db=db, job_id=job_id, user_id=user_id)
     if not success:
+        logger.warning(f"Job {job_id} not found or not owned by user {user_id} for deletion.")
         raise HTTPException(
             status_code=404,
             detail=f"Job with id {job_id} not found for user {user_id}",
         )
-    db.commit()
+    # db.commit() # Commit is now handled in crud.delete_job
+    
+    # Send SSE notification
     await manager.send_personal_message(
-        {"job_id": job_id}, user_id, event="job_deleted"
+        {"job_id": job_id, "message": "Job deleted successfully"},
+        user_id,
+        event="job_deleted"
     )
-    return {"status": "deleted"}
+    logger.info(f"Successfully deleted job {job_id} for user {user_id} and sent SSE.")
+    return {"status": "deleted", "job_id": job_id}
 
 
 # --- Endpoint to save job from Chrome Extension --- #
