@@ -1,3 +1,4 @@
+from fastapi.responses import RedirectResponse
 import traceback, sys
 import asyncio
 from fastapi import (
@@ -755,18 +756,18 @@ async def create_checkout_session(
 
     try:
         logger.info(f"Attempting to create Stripe checkout session for user {current_user.id}")
-        session = await stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            line_items=[
-                {
-                    "price": settings.stripe_price_id_50_credits,
-                    "quantity": 1,
-                }
-            ],
-            mode="payment",
-            success_url=f"{success_url}?session_id={{CHECKOUT_SESSION_ID}}", # Pass session_id if needed later
-            cancel_url=str(cancel_url),
-            metadata={"user_id": str(current_user.id)}, # Ensure user_id is passed
+        loop = asyncio.get_running_loop()
+        session = await loop.run_in_executor(
+            None,
+            lambda: stripe.checkout.Session.create(
+                payment_method_types=["card"],
+                line_items=[{"price": settings.stripe_price_id_50_credits, "quantity": 1}],
+                mode="payment",
+                success_url=f"{success_url}?session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=str(cancel_url),
+                metadata={"user_id": str(current_user.id)},
+                locale='en',
+            ),
         )
         logger.info(f"Stripe checkout session created successfully (ID: {session.id}) for user {current_user.id}")
         return {"url": session.url}
@@ -782,15 +783,30 @@ async def create_checkout_session(
 
 # --- Billing Success/Cancel Page Routes --- #
 @app.get("/billing/success", response_class=HTMLResponse, name="billing_success_page", tags=["Billing"])
-async def billing_success_page(request: Request):
+async def billing_success_page(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+):
     """Serves the billing success page."""
-    return templates.TemplateResponse("billing_success.html", {"request": request})
+    return RedirectResponse(url="https://greatfit.app/")
 
 
 @app.get("/billing/cancel", response_class=HTMLResponse, name="billing_cancel_page", tags=["Billing"])
-async def billing_cancel_page(request: Request):
+async def billing_cancel_page(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+):
     """Serves the billing cancellation page."""
-    return templates.TemplateResponse("billing_cancel.html", {"request": request})
+    ctx = {
+        "request": request,
+        "env": "dev",
+        "auth_billing_enabled": settings.auth_billing_enabled,
+        "cognito_user_pool_id": settings.cognito_user_pool_id or "",
+        "cognito_app_client_id": settings.cognito_app_client_id or "",
+        "cognito_domain": settings.cognito_domain or "",
+        "aws_region": settings.aws_region or "",
+    }
+    return templates.TemplateResponse("billing_cancel.html", ctx)
 
 
 # --- Stripe Webhook Endpoint --- #

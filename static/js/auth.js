@@ -4,29 +4,48 @@
  */
 
 // --- Configuration ---
+let amplifyConfigPromise = null;
+
 function configureAmplify() {
-  if (!window.COGNITO_USER_POOL_ID || !window.COGNITO_APP_CLIENT_ID || !window.COGNITO_DOMAIN) {
-    console.warn("Cognito env vars not set, Amplify auth disabled.");
-    return false; // Indicates auth is disabled
+  if (amplifyConfigPromise) {
+    return amplifyConfigPromise;
   }
 
-  Amplify.configure({
-    Auth: {
-      region: window.AWS_REGION || 'us-east-1', // Fallback region if not set
-      userPoolId: window.COGNITO_USER_POOL_ID,
-      userPoolWebClientId: window.COGNITO_APP_CLIENT_ID,
-      // OAUTH settings - REQUIRED for Authorization Code Grant
-      oauth: {
-        domain: window.COGNITO_DOMAIN, // e.g., your-domain.auth.us-east-1.amazoncognito.com
-        scope: ['openid', 'email', 'profile'],
-        redirectSignIn: window.location.origin + '/', // Redirect back to root after sign in
-        redirectSignOut: window.location.origin + '/', // Redirect back to root after sign out
-        responseType: 'code' // Must be 'code' for Authorization Code Grant
-      }
+  amplifyConfigPromise = new Promise((resolve, reject) => {
+    if (!window.COGNITO_USER_POOL_ID || !window.COGNITO_APP_CLIENT_ID || !window.COGNITO_DOMAIN) {
+      const errMsg = "Cognito env vars not set, Amplify auth disabled.";
+      console.warn(errMsg);
+      reject(new Error(errMsg)); // Reject if auth cannot be configured
+      return;
+    }
+
+    try {
+      const amplifyAuthConfig = {
+        Auth: {
+          region: window.AWS_REGION || 'us-east-1', // Fallback region if not set
+          userPoolId: window.COGNITO_USER_POOL_ID,
+          userPoolWebClientId: window.COGNITO_APP_CLIENT_ID,
+          oauth: {
+            domain: window.COGNITO_DOMAIN,
+            scope: ['openid', 'email', 'profile'],
+            redirectSignIn: window.location.origin + '/',
+            redirectSignOut: window.location.origin + '/',
+            responseType: 'code'
+          }
+        }
+      };
+      /* 1️⃣  Always call configure — Amplify.merge ensures idempotency.
+         This overwrites / extends any bare‑bones config created by the
+         bundle itself, so required Auth keys are guaranteed to exist. */
+      Amplify.configure(amplifyAuthConfig);
+      console.log("Amplify Auth configured (merged) successfully.");
+      resolve(true); // Resolve indicating auth is configured and enabled
+    } catch (error) {
+      console.error("Error configuring Amplify:", error);
+      reject(error); // Reject on configuration error
     }
   });
-  console.log("Amplify Auth configured.");
-  return true; // Indicates auth is enabled
+  return amplifyConfigPromise;
 }
 
 // --- Global State & Helpers ---
@@ -35,12 +54,21 @@ window.authHeaders = async () => {
   if (window.AUTH_BILLING_ENABLED === false) {
     return {};
   }
+
+  try {
+    await configureAmplify(); // Ensure Amplify is configured
+  } catch (configError) {
+    console.error('Amplify configuration failed, cannot get auth headers:', configError);
+    return {}; // Cannot get headers if Amplify isn't configured
+  }
+
   if (window.location.search.includes('code=')) {
     // let Amplify exchange the code first
+    // This delay might still be needed if Auth.currentSession() is called too soon after redirect
     await new Promise(r => setTimeout(r, 800));
   }
+
   try {
-    // Amplify automatically refreshes tokens if needed
     const session = await Auth.currentSession();
     const idToken = session.getIdToken().getJwtToken();
     return idToken ? { Authorization: `Bearer ${idToken}` } : {};
@@ -53,15 +81,14 @@ window.authHeaders = async () => {
 // --- Core Auth Logic ---
 async function checkAuthState() {
   if (window.AUTH_BILLING_ENABLED === false) {
-    // Local development mode: backend auto-creates a default user. Fetch it so
-    // the frontend knows the user_id, enabling profile and job loading after a page refresh.
+    // Local development mode
+    let localUser = null;
     try {
-      const res = await fetch('/users/me'); // No auth header needed in local mode
+      const res = await fetch('/users/me');
       if (res.ok) {
-        const user = await res.json();
-        window.currentUserId = user.id;
+        localUser = await res.json();
+        window.currentUserId = localUser.id;
         console.log('Local mode: User ID set to', window.currentUserId);
-        // Establish SSE connection once the user ID is known
         if (typeof connectToSSE === 'function') connectToSSE(window.currentUserId);
       } else {
         console.error('Local mode: Failed to fetch /users/me', await res.text());
@@ -70,69 +97,87 @@ async function checkAuthState() {
       console.error('Local mode: Error fetching /users/me', err);
     }
     renderAuthNav(false, false);
+    // Dispatch event indicating auth state (local mode, Amplify not used)
+    window.dispatchEvent(new CustomEvent('amplifyAuthReady', {
+      detail: { isLoggedIn: !!localUser, user: localUser, error: null, authDisabled: true }
+    }));
     return;
   }
 
-  const authEnabled = configureAmplify();
+  // Auth enabled - attempt to configure and use Amplify
+  let authEnabled = false;
+  let configError = null;
+  try {
+    await configureAmplify();
+    authEnabled = true; // If configureAmplify resolves, it's enabled
+  } catch (error) {
+    console.error('Failed to configure Amplify for checkAuthState:', error);
+    configError = error;
+    // authEnabled remains false
+  }
+
   if (!authEnabled) {
-    // Auth disabled - try to fetch user info assuming local mode
-    try {
-      // Use the backend's local mode logic directly
-      const res = await fetch('/users/me'); // No auth header needed in local mode
-      if (res.ok) {
-        const user = await res.json();
-        window.currentUserId = user.id;
-        console.log('Local mode: User ID set to', window.currentUserId);
-        // Trigger SSE connection now that userId is set
-        if (typeof connectToSSE === 'function') connectToSSE(window.currentUserId);
-      } else {
-        console.error('Local mode: Failed to fetch /users/me', await res.text());
-      }
-    } catch (err) {
-      console.error('Local mode: Error fetching /users/me', err);
-    }
-    renderAuthNav(false, false); // Render as not logged in, auth disabled
+    // Configuration failed or Cognito vars not set
+    renderAuthNav(false, false); // Render as not logged in, auth effectively disabled
+    window.dispatchEvent(new CustomEvent('amplifyAuthReady', {
+      detail: { isLoggedIn: false, user: null, error: configError, authDisabled: true } // True because Amplify cannot be used
+    }));
     return;
   }
 
-  // Auth enabled - use Amplify
+  // Amplify is configured (or at least configuration was attempted and didn't throw an unhandled error here)
   try {
     const user = await Auth.currentAuthenticatedUser();
-    const session = await Auth.currentSession(); // Ensure session is valid
-    const idPayload   = (await Auth.currentSession()).getIdToken().decodePayload();
+    const session = await Auth.currentSession();
+    const idToken = session.getIdToken().getJwtToken();
+
+    if (idToken) {
+      localStorage.setItem('id_token', idToken);
+      localStorage.setItem('isLoggedIn', 'true');
+      console.log('auth.js: id_token and isLoggedIn set in localStorage.');
+    } else {
+      console.warn('auth.js: No idToken found in session to set in localStorage.');
+    }
+    const idPayload = session.getIdToken().decodePayload();
     window.currentUserId = idPayload.sub;
     console.log('User authenticated via Amplify (from idToken):', idPayload);
-    renderAuthNav(true, true); // Render as logged in, auth enabled
+    renderAuthNav(true, true);
 
-    // Now fetch our internal user record (to ensure it exists/create if needed)
-    // This mimics the backend's get_current_user upsert logic which happens on first API hit anyway
+    // Dispatch event: success
+    window.dispatchEvent(new CustomEvent('amplifyAuthReady', {
+      detail: { isLoggedIn: true, user: user.attributes || idPayload, error: null, authDisabled: false }
+    }));
+
     const meResponse = await fetch('/users/me', { headers: await window.authHeaders() });
     if (meResponse.ok) {
-        const dbUser = await meResponse.json();
-        // Optional: Verify dbUser.id matches cognitoUser.attributes.sub if needed,
-        // though backend validation should handle mismatches.
-        console.log('Backend user record confirmed/created for', dbUser.email);
-        // Trigger SSE connection now that userId is set
-        if (typeof connectToSSE === 'function') connectToSSE(dbUser.id);
+      const dbUser = await meResponse.json();
+      console.log('Backend user record confirmed/created for', dbUser.email);
+      if (typeof connectToSSE === 'function') connectToSSE(dbUser.id);
     } else {
-        console.error("Failed to verify/create backend user record via /users/me", await meResponse.text());
+      console.error("Failed to verify/create backend user record via /users/me", await meResponse.text());
     }
 
-
-  } catch (error) {
-    console.log('User not authenticated via Amplify:', error); // Keep logging for debug
+  } catch (authError) {
+    console.log('User not authenticated via Amplify:', authError);
     window.currentUserId = null;
-    renderAuthNav(false, true); // Render as not logged in, auth enabled
-    // *** ADD REDIRECT LOGIC HERE ***
-    // Only redirect if on the main page ('/') and auth is enabled
-    if (window.location.pathname === '/' && authEnabled) {
-        console.log("User not authenticated on main page, redirecting to login...");
-        Auth.federatedSignIn(); // Redirect to Cognito Hosted UI
+    localStorage.removeItem('id_token');
+    localStorage.removeItem('isLoggedIn');
+    console.log('auth.js: id_token and isLoggedIn removed from localStorage due to auth error.');
+    renderAuthNav(false, true);
+
+    // Dispatch event: not authenticated
+    window.dispatchEvent(new CustomEvent('amplifyAuthReady', {
+      detail: { isLoggedIn: false, user: null, error: authError, authDisabled: false }
+    }));
+
+    // Only redirect if on the main page ('/') and auth is enabled (which it is at this point if we reached here)
+    if (window.location.pathname === '/') {
+      console.log("User not authenticated on main page, redirecting to login...");
+      await configureAmplify(); // Ensure configured before sign-in attempt
+      Auth.federatedSignIn();
     }
-    // *** END REDIRECT LOGIC ***
   }
 
-  // Clean up Cognito code from URL if present (Amplify might do this, but belt-and-suspenders)
   if (window.location.search.includes('code=')) {
     const nextURL = window.location.origin + window.location.pathname;
     window.history.replaceState({}, document.title, nextURL);
@@ -155,12 +200,22 @@ function renderAuthNav(isAuthed, authEnabled) {
   } else {
     // Use Amplify's federatedSignIn which handles the redirect based on config
     nav.innerHTML = `<a href="#" id="signInLink" class="text-sm text-white hover:text-gray-200">Sign In</a>`;
-    document.getElementById('signInLink')?.addEventListener('click', (e) => {
+    document.getElementById('signInLink')?.addEventListener('click', async (e) => {
         e.preventDefault();
-        Auth.federatedSignIn(); // This initiates the redirect to Cognito Hosted UI
+        try {
+          await configureAmplify();
+          Auth.federatedSignIn(); // This initiates the redirect to Cognito Hosted UI
+        } catch (error) {
+          console.error("Failed to configure Amplify before federated sign-in in renderAuthNav:", error);
+          // Optionally, display a message to the user or handle appropriately
+        }
     });
   }
 }
 
 // --- Initialization ---
+/* 2️⃣  Kick‑off configuration as soon as auth.js is parsed, so nothing
+       calls Auth.* before the promise has settled. */
+configureAmplify().catch(() => {});      // swallow here; handled later
+
 document.addEventListener('DOMContentLoaded', checkAuthState);
