@@ -5,7 +5,7 @@
 <div class="min-h-screen bg-gray-50">
   <nav class="bg-indigo-600">
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-      <div class="flex h-16 items-center justify-between" x-data="authFlow()">
+      <div class="flex h-16 items-center justify-between" x-data="authFlow">
         <div class="flex items-center">
           <a href="/" class="flex items-center text-white font-semibold text-lg">
             <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16" class="w-6 h-6 mr-2">
@@ -21,7 +21,7 @@
         </div>
         <!-- Credit Display & Purchase Button (shown when logged in) -->
         <div x-show="isLoggedIn && authBillingEnabled" class="flex items-center space-x-4">
-          <span class="text-sm text-gray-600">Credits: <span x-text="creditBalance">--</span></span>
+          <span class="text-sm text-white">Credits: <span x-text="creditBalance">--</span></span>
           <button @click="buyCredits()" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">Buy Credits ($5)</button>
         </div>
       </div>
@@ -130,112 +130,130 @@
   </div>
   <!-- End Add Job Modal -->
 </div>
-{% endblock %}
 
+<!-- Define authFlow as a global function BEFORE Alpine initializes -->
 <script>
-  // Extend Alpine data for credit balance
-  document.addEventListener('alpine:init', () => {
-    Alpine.data('authFlow', () => ({
+  // Define authFlow as a global window function first so it's available immediately
+  window.authFlow = function() {
+    return {
       isLoggedIn: false,
       userEmail: null,
-      creditBalance: null, // Add credit balance state
+      creditBalance: null, 
       authBillingEnabled: window.AUTH_BILLING_ENABLED,
+      
       async init() {
-        console.log('Auth flow initializing...');
-        await this.checkAuthState();
-        if (this.isLoggedIn) {
-          await this.fetchUserData(); // Fetch user data including credits
-        }
-        // Handle redirect from Cognito
-        if (window.location.hash.includes('id_token')) {
-          console.log('Detected id_token in URL hash.');
-          // Amplify handles token storage automatically on redirect
-          // We might need a small delay or check if Amplify has processed it
-          setTimeout(async () => {
-            console.log('Re-checking auth state after potential redirect...');
-            await this.checkAuthState();
-            if (this.isLoggedIn) {
-              await this.fetchUserData();
-              window.location.hash = ''; // Clear the hash
-            }
-          }, 1500); // Adjust delay if needed
-        }
-        // Add event listener for successful login
-        window.addEventListener('loginSuccess', async () => {
-            console.log('Login success event received, fetching user data...');
-            await this.fetchUserData();
+        console.log('Auth flow initializing...', this);
+        console.log('Initial isLoggedIn state:', this.isLoggedIn);
+        console.log('Initial authBillingEnabled state:', this.authBillingEnabled);
+        
+        window.addEventListener('amplifyAuthReady', async (event) => {
+          console.log('amplifyAuthReady event received:', event.detail);
+          this.isLoggedIn = event.detail.isLoggedIn;
+          this.authDisabled = event.detail.authDisabled; 
+
+          if (this.isLoggedIn && event.detail.user) {
+            this.userEmail = event.detail.user.attributes ? event.detail.user.attributes.email : null;
+            console.log('User is logged in via amplifyAuthReady, fetching user data...');
+            await this.fetchUserData(event.detail.user);
+          } else {
+            console.log('User is NOT logged in or no user object in amplifyAuthReady event');
+            this.userEmail = null;
+            this.creditBalance = null;
+            window.currentUserId = null;
+            window.dispatchEvent(new CustomEvent('logoutSuccess'));
+          }
         });
-        // Add event listener for logout
+
+        if (window.location.hash.includes('id_token')) {
+          console.log('Detected id_token in URL hash. Amplify should handle this and dispatch amplifyAuthReady.');
+        }
+
         window.addEventListener('logoutSuccess', () => {
-            console.log('Logout success event received, clearing user data...');
+            console.log('Logout success event received, clearing user data in Alpine component...');
             this.isLoggedIn = false;
             this.userEmail = null;
-            this.creditBalance = null; // Clear credits on logout
-            localStorage.removeItem('id_token');
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            window.currentUserId = null; // Clear global user ID
+            this.creditBalance = null;
+            window.currentUserId = null;
         });
       },
-      async checkAuthState() {
-        // ... (existing checkAuthState code)
-        try {
-            const session = await Auth.currentSession();
-            console.log('User is authenticated:', session);
-            this.isLoggedIn = true;
-            const idToken = session.getIdToken().getJwtToken();
-            const accessToken = session.getAccessToken().getJwtToken();
-            const refreshToken = session.getRefreshToken().getToken();
-            localStorage.setItem('id_token', idToken);
-            localStorage.setItem('access_token', accessToken);
-            localStorage.setItem('refresh_token', refreshToken);
-            window.dispatchEvent(new CustomEvent('loginSuccess'));
-
-        } catch (error) {
-            console.log('User is not authenticated:', error);
-            this.isLoggedIn = false;
-            window.dispatchEvent(new CustomEvent('logoutSuccess'));
-        }
-      },
-      async fetchUserData() {
+      
+      async fetchUserData(user = null) {
           console.log('Fetching user data from /users/me...');
-          if (!this.isLoggedIn) return;
+          if (!this.isLoggedIn) {
+            console.warn('fetchUserData called but isLoggedIn is false (or not yet true from event), aborting');
+            return;
+          }
+          
+          let userId = user ? (user.username || user.id || (user.attributes ? user.attributes.sub : null)) : window.currentUserId;
+
+          if (!userId && window.currentUserId) {
+            userId = window.currentUserId;
+          }
+
+          if (!userId) {
+            console.error('fetchUserData: User ID not available from event.detail.user or window.currentUserId. Cannot fetch data.');
+            return;
+          }
+          console.log('Using User ID for fetchUserData:', userId);
+
           try {
-              const response = await fetch('/users/me', { headers: window.authHeaders() });
+              console.log('window.authHeaders is defined:', typeof window.authHeaders === 'function');
+              const headers = await window.authHeaders();
+              console.log('Auth headers for /users/me:', headers);
+              
+              const response = await fetch('/users/me', { headers });
               if (!response.ok) {
+                  const errorText = await response.text();
+                  console.error(`Failed to fetch user data: ${response.status} ${response.statusText}`, errorText);
+                  if (response.status === 401 || response.status === 403) {
+                      console.log('Auth error fetching user data, attempting to sign out user.');
+                      this.isLoggedIn = false;
+                      this.userEmail = null;
+                      this.creditBalance = null;
+                      window.currentUserId = null;
+                      window.dispatchEvent(new CustomEvent('logoutSuccess'));
+                  }
                   throw new Error(`Failed to fetch user data: ${response.statusText}`);
               }
               const userData = await response.json();
               console.log('User data received:', userData);
               this.userEmail = userData.email;
               this.creditBalance = userData.credits;
-              window.currentUserId = userData.id; // Set global user ID if still needed elsewhere
-              // Ensure SSE connects after user ID is known
-              if (window.connectSSE) {
-                window.connectSSE(userData.id);
+              console.log('Credit balance set to:', this.creditBalance);
+              
+              window.currentUserId = userData.id;
+
+              if (window.connectSSE && window.currentUserId) {
+                window.connectSSE(window.currentUserId);
               }
 
           } catch (error) {
               console.error('Error fetching user data:', error);
-              // Handle error, maybe logout user
-              this.handleLogout();
+              this.isLoggedIn = false;
+              this.userEmail = null;
+              this.creditBalance = null;
+              window.currentUserId = null;
+              window.dispatchEvent(new CustomEvent('logoutSuccess'));
           }
       },
+      
       handleLogin() {
-        // ... (existing handleLogin code)
         Auth.federatedSignIn();
       },
+      
       async handleLogout() {
-        // ... (existing handleLogout code)
+        console.log('handleLogout called');
         try {
             await Auth.signOut();
             console.log('User signed out successfully.');
+            localStorage.removeItem('isLoggedIn');
+            console.log('isLoggedIn removed from localStorage');
             window.dispatchEvent(new CustomEvent('logoutSuccess'));
         } catch (error) {
             console.error('Error signing out: ', error);
         }
       },
-      // --- Buy Credits Logic --- //
+      
       async buyCredits() {
           if (!this.isLoggedIn) {
               console.warn('User not logged in, cannot buy credits.');
@@ -245,36 +263,56 @@
           try {
               const response = await fetch('/billing/checkout-session', {
                   method: 'POST',
-                  headers: await window.authHeaders()
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(await window.authHeaders())
+                  },
+                  body: JSON.stringify({ product_id: 'credits_50' })
               });
               if (!response.ok) {
-                  // Handle auth errors specifically
                   if (response.status === 401 || response.status === 403) {
                       console.error(`Authentication error (${response.status}) accessing /billing/checkout-session. Redirecting to login.`);
                       if (window.showToast) {
                           window.showToast("Your session may have expired. Please sign in again.", "error");
                       }
-                      window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
-                      Auth.federatedSignIn(); // Redirect to login
-                      return; // Stop further processing
+                      window.dispatchEvent(new CustomEvent('logoutSuccess'));
+                      Auth.federatedSignIn();
+                      return;
                   }
-                  // Handle other HTTP errors
-                   const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` })); // Add catch for non-JSON errors
-                   throw new Error(errorData.detail || 'Failed to create Stripe checkout session');
+                  const errorData = await response.json().catch(() => ({ detail: `Server error: ${response.status}` }));
+                  throw new Error(errorData.detail || 'Failed to create Stripe checkout session');
               }
               const session = await response.json();
               console.log('Stripe session created:', session);
               if (session.url) {
-                  window.location.href = session.url; // Redirect to Stripe Checkout
+                  window.location.href = session.url;
               }
           } catch (error) {
               console.error('Error buying credits:', error);
-              // Show error to user (e.g., using toast)
               if (window.showToast) {
                   window.showToast(`Error: ${error.message}`, 'error');
               }
           }
       }
-    }))
+    };
+  };
+  
+  // Also register with Alpine.data for consistency
+  document.addEventListener('alpine:init', () => {
+    console.log('Alpine init: registering authFlow component');
+    Alpine.data('authFlow', window.authFlow);
+  });
+  
+  // Initialize file upload only after DOM content is loaded
+  document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM fully loaded - checking for upload elements');
+    // This is just a safety check to ensure the elements exist before initializeFileUpload runs
+    if (document.getElementById('uploadArea') && document.getElementById('resumeFile')) {
+      console.log('Upload elements found on page');
+    } else {
+      console.warn('Upload elements not found on initial DOMContentLoaded check');
+    }
   });
 </script>
+
+{% endblock %}
