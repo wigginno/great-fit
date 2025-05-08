@@ -8,91 +8,74 @@ async function loadJobs() {
   try {
     const userId = window.currentUserId;
     const jobsContainer = document.getElementById("jobsList");
-    jobsContainer.innerHTML = "Loading jobs...";
+    jobsContainer.innerHTML = '<p class="text-gray-500 italic">Loading jobs...</p>';
 
     const response = await fetch(`/jobs/`, { headers: await window.authHeaders() });
 
     if (!response.ok) {
-      // Handle auth errors specifically
       if (response.status === 401 || response.status === 403) {
         console.error(`Authentication error (${response.status}) accessing /jobs/. Redirecting to login.`);
         showToast("Your session may have expired. Please sign in again.", "error");
-        window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
-        Auth.federatedSignIn(); // Redirect to login
-        return; // Stop further processing
+        window.dispatchEvent(new CustomEvent('logoutSuccess'));
+        Auth.federatedSignIn();
+        return;
       }
-      // Handle other HTTP errors
       const errorData = await response.json();
-      throw new Error(
-        errorData.detail || `HTTP error! status: ${response.status}`,
-      );
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
     }
 
     const jobs = await response.json();
 
     if (jobs.length === 0) {
-      jobsContainer.innerHTML =
-        '<p class="placeholder">No jobs saved yet. Add a job using the form above.</p>';
+      jobsContainer.innerHTML = '<p class="text-gray-500 italic">No jobs saved yet. Click "Add Job" to get started.</p>';
       return;
     }
 
-    let jobsHtml = '<div class="jobs-list">';
+    let jobsHtml = '<div class="space-y-3">';
 
     jobs.forEach((job) => {
+      const scoreDisplay = job.ranking_score !== null && job.ranking_score !== undefined
+        ? `<div class="job-score-display mt-1 inline-block rounded-full px-3 py-1 text-xs font-semibold text-white">Match: ${job.ranking_score.toFixed(1)}/10</div>`
+        : '<div class="job-score-display mt-1 inline-block rounded-full bg-gray-400 px-3 py-1 text-xs font-semibold text-white">Processing...</div>';
+
       jobsHtml += `
-                <div class="job-card relative rounded-lg bg-white border border-gray-200 shadow-sm p-4 hover:shadow-md transition cursor-pointer" data-job-id="${job.id}">
-                    <button class="delete-job-btn absolute top-2 right-2 text-red-500 hover:text-red-700" data-job-id="${job.id}" title="Delete">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                    <div class="job-title font-medium text-gray-800">${job.title || "Untitled Job"}</div>
-                    <div class="job-company text-sm text-gray-500">${job.company || "Unknown Company"}</div>
-                    ${
-                      job.ranking_score !== null && job.ranking_score !== undefined
-                        ? `<div class="job-score mt-2 inline-block rounded px-2 py-0.5 text-xs font-semibold text-white">Match: ${job.ranking_score.toFixed(1)}/10</div>`
-                        : '<div class="job-score mt-2 inline-block rounded px-2 py-0.5 text-xs font-semibold text-white unranked">Scoring job...</div>'
-                    }
-                </div>
-            `;
+        <div class="job-card relative rounded-lg bg-white border border-gray-200 p-4 hover:shadow-lg transition-shadow duration-200 cursor-pointer" data-job-id="${job.id}">
+          <button class="delete-job-btn absolute top-2 right-2 p-1 text-gray-400 hover:text-red-500 transition-colors" data-job-id="${job.id}" title="Delete Job">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16" class="w-5 h-5">
+              <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+              <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+            </svg>
+          </button>
+          <div class="font-semibold text-gray-800 truncate pr-8" title="${job.title || "Untitled Job"}">${job.title || "Untitled Job"}</div>
+          <div class="text-sm text-gray-500 truncate pr-8" title="${job.company || "Unknown Company"}">${job.company || "Unknown Company"}</div>
+          ${scoreDisplay}
+        </div>
+      `;
     });
 
     jobsHtml += "</div>";
     jobsContainer.innerHTML = jobsHtml;
 
-    // Add color-coding classes after rendering
     jobsContainer.querySelectorAll(".job-card").forEach((card) => {
       const jobId = card.getAttribute("data-job-id");
-      const job = jobs.find((j) => j.id == jobId); // Find the corresponding job data
+      const job = jobs.find((j) => String(j.id) === jobId);
       if (job) {
-        const scoreElement = card.querySelector(".job-score");
-        if (
-          scoreElement &&
-          job.ranking_score !== null &&
-          job.ranking_score !== undefined
-        ) {
-          // Gradient-based color mapping
+        const scoreElement = card.querySelector(".job-score-display");
+        if (scoreElement && job.ranking_score !== null && job.ranking_score !== undefined) {
           const clamped = Math.max(0, Math.min(10, job.ranking_score));
-          const hue = (clamped / 10) * 120;
-          scoreElement.style.backgroundColor = `hsl(${hue}, 90%, 45%)`;
-          scoreElement.style.color = "white";
-          scoreElement.style.padding = "0.1rem 0.4rem";
-          scoreElement.style.borderRadius = "0.25rem";
-          scoreElement.style.display = "inline-block";
-        } else if (
-          scoreElement &&
-          scoreElement.classList.contains("unranked")
-        ) {
-          scoreElement.style.backgroundColor = "#6c757d"; // Default grey for unranked
-          scoreElement.style.color = "white";
-          scoreElement.style.padding = "0.1rem 0.4rem";
-          scoreElement.style.borderRadius = "0.25rem";
-          scoreElement.style.display = "inline-block";
+          let bgColor = 'bg-red-500'; // Low score
+          if (clamped >= 7.5) bgColor = 'bg-green-500'; // High score
+          else if (clamped >= 4.5) bgColor = 'bg-yellow-500'; // Medium score
+          scoreElement.classList.remove('bg-gray-400'); // Remove default processing color
+          scoreElement.classList.add(bgColor);
         }
       }
     });
+
   } catch (error) {
     console.error("Error loading jobs:", error);
     const jobsContainer = document.getElementById("jobsList");
-    jobsContainer.innerHTML = `<p class="error">Error loading jobs: ${error.message}</p>`;
+    jobsContainer.innerHTML = `<p class="text-red-600 font-medium">Error loading jobs: ${error.message}</p>`;
   }
 }
 
@@ -100,162 +83,100 @@ async function loadJobs() {
 async function saveModalJob() {
   const rawJobDescription = document.getElementById("rawJobDescription");
   const modalSaveBtn = document.getElementById("modal-save-btn");
-  const modalCancelBtn = document.getElementById("modal-cancel-btn");
+  const modalCancelBtn = document.getElementById("modal-cancel-btn"); // Though Alpine handles close, we might disable it
   const modalLoadingIndicator = document.getElementById("modal-loading-indicator");
-  const addJobModal = document.getElementById("add-job-modal");
+  const modalErrorDiv = document.getElementById("modal-error");
 
-  // Validation - Raw job description required
+  modalErrorDiv.textContent = ""; // Clear previous errors
+
   if (!rawJobDescription.value.trim()) {
-    let errorDiv = document.getElementById("modal-error");
-    if (!errorDiv) {
-      errorDiv = document.createElement("div");
-      errorDiv.id = "modal-error";
-      errorDiv.className = "mt-3 text-sm text-red-600";
-      rawJobDescription.after(errorDiv);
-    }
-    errorDiv.textContent = "Job description is required.";
+    modalErrorDiv.textContent = "Job description is required.";
+    rawJobDescription.focus();
     return;
   }
 
   try {
-    // --- UX: close modal & toast immediately ---
-    addJobModal.classList.add("hidden");
-    addJobModal.classList.remove("flex");
-    showToast("Job submitted - processing in background...");
+    modalSaveBtn.disabled = true;
+    if(modalCancelBtn) modalCancelBtn.disabled = true; // If it exists and is not purely Alpine controlled
+    modalLoadingIndicator.classList.remove("hidden");
 
-    // Capture description before clearing so payload isn't empty
     const markdownValue = rawJobDescription.value;
 
-    // Reset form early so it’s clear when reopened
-    rawJobDescription.value = "";
+    const payload = { markdown_content: markdownValue };
 
-    // Disable buttons and show loading (even though modal is hidden)
-    modalSaveBtn.disabled = true;
-    modalCancelBtn.disabled = true;
-    modalLoadingIndicator.style.display = "inline-block";
-
-    // Remove any previous error message
-    const errorDiv = document.getElementById("modal-error");
-    if (errorDiv) {
-      errorDiv.remove();
-    }
-
-    // Payload for backend endpoint
-    const payload = {
-      markdown_content: markdownValue,
-    };
-
-    // Call POST /jobs/markdown (unified job submission)
     const response = await fetch(`/jobs/markdown`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(await window.authHeaders()),
-      },
+      headers: { "Content-Type": "application/json", ...(await window.authHeaders()) },
       body: JSON.stringify(payload),
     });
-    // Log POST response status for debugging
-    console.log("POST /jobs/markdown response status:", response.status);
 
     if (!response.ok) {
-      // Handle auth errors specifically
       if (response.status === 401 || response.status === 403) {
-        console.error(`Authentication error (${response.status}) accessing /jobs/markdown. Redirecting to login.`);
         showToast("Your session may have expired. Please sign in again.", "error");
-        window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
-        Auth.federatedSignIn(); // Redirect to login
-        // Re-enable buttons and hide loading in finally block
-        throw new Error(`Authentication error: ${response.status}`); // Throw to trigger finally
+        window.dispatchEvent(new CustomEvent('logoutSuccess'));
+        Auth.federatedSignIn();
+        throw new Error(`Authentication error: ${response.status}`);
       }
-      // Handle other HTTP errors
       let errorText = `HTTP error! status: ${response.status}`;
       try {
         const errorData = await response.json();
         errorText = errorData.detail || errorText;
       } catch (_) {}
-      console.error("Job save failed:", errorText);
-      showToast(`Job save failed: ${errorText}`, "error");
       throw new Error(errorText);
     }
 
-    // Optionally, you could use the returned job data here if needed:
-    // const job = await response.json();
+    // Success
+    showToast("Job submitted - processing in background...", "success");
+    window.dispatchEvent(new CustomEvent('close-add-job-modal')); // Closes modal and clears form
+    await loadJobs(); // Refresh list
 
-    // Modal was already closed & toast shown earlier.
-
-    // Refresh UI immediately; don’t wait for SSE
-    await loadJobs();
-
-    // Form was reset earlier.
   } catch (error) {
     console.error("Error saving job:", error);
-
-    // Show error in modal
-    let errorDiv = document.getElementById("modal-error");
-    if (!errorDiv) {
-      errorDiv = document.createElement("div");
-      errorDiv.id = "modal-error";
-      errorDiv.className = "mt-3 text-sm text-red-600";
-      rawJobDescription.after(errorDiv);
-    }
-    errorDiv.textContent = `Error saving job: ${error.message}`;
+    showToast(`Job save failed: ${error.message}`, "error");
+    modalErrorDiv.textContent = `Error: ${error.message}`;
   } finally {
-    // Re-enable buttons and hide loading
     modalSaveBtn.disabled = false;
-    modalCancelBtn.disabled = false;
-    modalLoadingIndicator.style.display = "none";
+    if(modalCancelBtn) modalCancelBtn.disabled = false;
+    modalLoadingIndicator.classList.add("hidden");
   }
 }
 
 // Function to handle clicking on a job in the jobs list
 function handleJobClick(event) {
-  // Handle delete button click on job list
   const deleteBtn = event.target.closest(".delete-job-btn");
   if (deleteBtn) {
+    event.stopPropagation();
     const jobId = deleteBtn.getAttribute("data-job-id");
-    if (jobId) deleteJob(jobId);
+    if (jobId) deleteJobWithConfirmation(jobId);
     return;
   }
+
   const jobCard = event.target.closest(".job-card");
   if (jobCard) {
     const jobId = jobCard.getAttribute("data-job-id");
     if (jobId) {
-      // Toggle off if already selected
-      if (jobCard.classList.contains("selected")) {
+      if (jobCard.classList.contains("ring-2")) { // Check for selection style
         const details = document.getElementById("jobDetails");
-        if (details) details.innerHTML = '';
-        jobCard.classList.remove("selected");
+        if (details) details.innerHTML = '<p class="text-gray-500 italic">Select a job to see details.</p>';
+        jobCard.classList.remove("ring-2", "ring-indigo-500", "bg-indigo-50");
+        window.selectedJobId = null;
         return;
       }
-      const userId = window.currentUserId;
-      showJobDetails(jobId, userId);
-
-      // Update selected state
-      document.querySelectorAll(".job-card").forEach(card => {
-        card.classList.remove("selected");
+      showJobDetails(jobId, window.currentUserId);
+      document.querySelectorAll(".job-card.ring-2").forEach(card => {
+        card.classList.remove("ring-2", "ring-indigo-500", "bg-indigo-50");
       });
-      jobCard.classList.add("selected");
+      jobCard.classList.add("ring-2", "ring-indigo-500", "bg-indigo-50");
+      window.selectedJobId = jobId;
     }
   }
 }
 
-// Function to handle job actions (like ranking)
+// Function to handle job actions (like ranking) - This seems to be for buttons within the details view
 function handleJobActions(event) {
-  const rankBtn = event.target.closest(".rank-job-btn");
-  const deleteBtn = event.target.closest(".delete-job-btn");
-
-  if (rankBtn) {
-    const jobId = rankBtn.getAttribute("data-job-id");
-    if (jobId) {
-      const userId = window.currentUserId;
-      rankJob(jobId, userId);
-    }
-  } else if (deleteBtn) {
-    const jobId = deleteBtn.getAttribute("data-job-id");
-    if (jobId) {
-      deleteJob(jobId);
-    }
-  }
+  // Example: if you add rank/tailor buttons inside #jobDetails
+  // const rankBtn = event.target.closest(".rank-job-btn");
+  // if (rankBtn) { /* ... */ }
 }
 
 // Function to show job details when a card is clicked
@@ -263,213 +184,190 @@ async function showJobDetails(jobId, userId) {
   try {
     console.log(`Showing details for job ${jobId}`);
     const jobDetailsContainer = document.getElementById("jobDetails");
-
     if (!jobDetailsContainer) {
       console.error("Job details container not found");
       return;
     }
 
-    jobDetailsContainer.innerHTML = '<div class="loading-spinner-container"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+    jobDetailsContainer.innerHTML = `
+      <div class="flex justify-center items-center h-full">
+        <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span class="ml-2 text-gray-500">Loading details...</span>
+      </div>`;
 
     const response = await fetch(`/jobs/${jobId}`, { headers: await window.authHeaders() });
 
     if (!response.ok) {
-      // Handle auth errors specifically
       if (response.status === 401 || response.status === 403) {
-        console.error(`Authentication error (${response.status}) accessing /jobs/${jobId}. Redirecting to login.`);
         showToast("Your session may have expired. Please sign in again.", "error");
-        window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
-        Auth.federatedSignIn(); // Redirect to login
-        return; // Stop further processing
+        window.dispatchEvent(new CustomEvent('logoutSuccess')); Auth.federatedSignIn(); return;
       }
-      // Handle other HTTP errors
       const errorData = await response.json();
       throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
     }
 
     const job = await response.json();
-
-    // Format job description with markdown parser if available
     let formattedDescription = job.description || '';
     if (window.marked && formattedDescription) {
       formattedDescription = marked.parse(formattedDescription);
     } else {
-      // Basic formatting fallback
-      formattedDescription = formattedDescription.replace(/\n/g, '<br>');
+      formattedDescription = `<p class="whitespace-pre-wrap">${formattedDescription.replace(/\n/g, '<br>')}</p>`;
     }
 
-    // Create HTML for job details
-    let jobHTML = `
-      <div class="job-details-header">
-        <h2>${job.title || 'Untitled Job'}</h2>
-        <div class="job-company-name">${job.company || 'Unknown Company'}</div>
-      </div>
-      <div class="job-details-content">
-        <div class="job-description">${formattedDescription}</div>
-      </div>
-    `;
-
-    // Add ranking section
-    jobHTML += `
-      <div class="job-ranking-section mt-4">
-        <div class="section-header">
-          <h3>Score Breakdown</h3>
-        </div>
-        <div id="ranking-details-${jobId}" class="content-section">
-    `;
+    let scoreHtml = `
+      <div id="ranking-loader-${jobId}" class="flex items-center text-sm text-gray-500">
+        <svg class="animate-spin h-5 w-5 mr-2 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <i>Calculating score...</i>
+      </div>`;
+    let explanationHtml = `<p class="text-sm text-gray-500 italic">Ranking explanation will appear here once processed.</p>`;
 
     if (job.ranking_score !== null && job.ranking_score !== undefined) {
-      // Determine score class
-      let scoreClass = 'low';
-      if (job.ranking_score >= 8.0) {
-        scoreClass = 'high';
-      } else if (job.ranking_score >= 5.0) {
-        scoreClass = 'medium';
-      }
-
-      // Add score display
-      jobHTML += `
-        <div class="score-display score-${scoreClass}">
-          <div class="score-value">${job.ranking_score.toFixed(1)}</div>
-          <div class="score-label">Match Score</div>
+      const clampedScore = Math.max(0, Math.min(10, job.ranking_score));
+      let scoreColor = 'bg-red-100 text-red-700';
+      if (clampedScore >= 7.5) scoreColor = 'bg-green-100 text-green-700';
+      else if (clampedScore >= 4.5) scoreColor = 'bg-yellow-100 text-yellow-700';
+      
+      scoreHtml = `
+        <div class="flex items-baseline">
+          <span class="text-3xl font-bold ${scoreColor.split(' ')[1]}">${job.ranking_score.toFixed(1)}</span>
+          <span class="text-sm text-gray-500 ml-1">/ 10 Match Score</span>
         </div>
       `;
-
-      // Add explanation if available (fallback to eventData.explanation)
-      const explanationText = job.ranking_explanation || job.explanation;
+      const explanationText = job.ranking_explanation || job.explanation; // Fallback
       if (explanationText) {
-        let formattedExplanation = explanationText;
-        if (window.marked) {
-          formattedExplanation = marked.parse(explanationText);
-        } else {
-          formattedExplanation = explanationText.replace(/\n/g, '<br>');
-        }
-        jobHTML += `<div class="ranking-explanation-content">${formattedExplanation}</div>`;
+        explanationHtml = window.marked ? marked.parse(explanationText) : `<div class="prose prose-sm max-w-none whitespace-pre-wrap">${explanationText.replace(/\n/g, '<br>')}</div>`;
       } else {
-        jobHTML += `<p><i>Ranking explanation not available.</i></p>`;
+        explanationHtml = `<p class="text-sm text-gray-500 italic">Ranking explanation not available.</p>`;
       }
-    } else {
-      // Show loading indicator for ranking
-      jobHTML += `
-        <div id="ranking-loader-${jobId}" class="loader-container">
-          <p><i>Calculating score...</i></p>
-          <div class="spinner-border spinner-border-sm text-secondary" role="status">
-            <span class="visually-hidden">Loading...</span>
-          </div>
-        </div>
-      `;
     }
 
-    jobHTML += `</div>`; // End ranking-details
-
-    // Add tailoring suggestions section
-    jobHTML += `
-      <div class="job-tailoring-section mt-4">
-        <div class="section-header">
-          <h3>Tailoring Suggestions</h3>
-        </div>
-        <div id="tailoring-suggestions-${jobId}" class="content-section">
-    `;
-    // Fallback to job.tailoring_suggestions or job.suggestions
-    const suggestionsText = job.tailoring_suggestions || job.suggestions;
+    let suggestionsHtml = `
+      <div id="tailoring-loader-${jobId}" class="flex items-center text-sm text-gray-500">
+        <svg class="animate-spin h-5 w-5 mr-2 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <i>Generating suggestions...</i>
+      </div>`;
+    const suggestionsText = job.tailoring_suggestions || job.suggestions; // Fallback
     if (suggestionsText) {
-      let formattedSuggestions = suggestionsText;
-      if (window.marked) {
-        formattedSuggestions = marked.parse(suggestionsText);
-      } else {
-        formattedSuggestions = suggestionsText.replace(/\n/g, '<br>');
-      }
-      jobHTML += `<div class="tailoring-suggestions-content">${formattedSuggestions}</div>`;
-    } else {
-      // Show loading indicator for tailoring
-      jobHTML += `
-        <div id="tailoring-loader-${jobId}" class="loader-container">
-          <p><i>Generating suggestions...</i></p>
-          <div class="spinner-border spinner-border-sm text-secondary" role="status">
-            <span class="visually-hidden">Loading...</span>
-          </div>
-        </div>
-      `;
+      suggestionsHtml = window.marked ? marked.parse(suggestionsText) : `<div class="prose prose-sm max-w-none whitespace-pre-wrap">${suggestionsText.replace(/\n/g, '<br>')}</div>`;
     }
 
-    jobHTML += `</div>`; // End tailoring-suggestions
+    const jobHTML = `
+      <div class="space-y-6">
+        <div>
+          <h2 class="text-2xl font-bold text-gray-800">${job.title || 'Untitled Job'}</h2>
+          <p class="text-md text-gray-600">${job.company || 'Unknown Company'}</p>
+        </div>
+        <div class="prose prose-sm max-w-none text-gray-700">${formattedDescription}</div>
+        
+        <div class="border-t border-gray-200 pt-4">
+          <h3 class="text-lg font-semibold text-gray-800 mb-2">Score Breakdown</h3>
+          <div id="ranking-details-${jobId}" class="p-4 bg-white rounded-md shadow-sm ring-1 ring-gray-200">
+            ${scoreHtml}
+            <div class="mt-3 ranking-explanation-content prose prose-sm max-w-none">${explanationHtml}</div>
+          </div>
+        </div>
 
-    // Render HTML
+        <div class="border-t border-gray-200 pt-4">
+          <h3 class="text-lg font-semibold text-gray-800 mb-2">Tailoring Suggestions</h3>
+          <div id="tailoring-suggestions-${jobId}" class="p-4 bg-white rounded-md shadow-sm ring-1 ring-gray-200">
+            <div class="tailoring-suggestions-content prose prose-sm max-w-none">${suggestionsHtml}</div>
+          </div>
+        </div>
+      </div>
+    `;
     jobDetailsContainer.innerHTML = jobHTML;
+
   } catch (error) {
     console.error(`Error showing job details:`, error);
     const jobDetailsContainer = document.getElementById("jobDetails");
     if (jobDetailsContainer) {
-      jobDetailsContainer.innerHTML = `<div class="error-message">Error loading job details: ${error.message}</div>`;
+      jobDetailsContainer.innerHTML = `<div class="p-4 text-red-600 bg-red-50 rounded-md">Error loading job details: ${error.message}</div>`;
     }
   }
 }
 
 // --- Delete Job Helpers ---
+function deleteJobWithConfirmation(jobId) {
+  if (window.confirm("Are you sure you want to delete this job? This action cannot be undone.")) {
+    actualDeleteJob(jobId);
+  }
+}
 
-async function deleteJob(jobId) {
+async function actualDeleteJob(jobId) {
+  const jobCardElement = document.querySelector(`.job-card[data-job-id="${jobId}"]`);
+  if (jobCardElement) jobCardElement.style.opacity = "0.5";
+
   try {
     const res = await fetch(`/jobs/${jobId}`, {
       method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        ...(await window.authHeaders()),
-      },
+      headers: { "Content-Type": "application/json", ...(await window.authHeaders()) },
     });
     if (!res.ok) {
-      // Handle auth errors specifically
       if (res.status === 401 || res.status === 403) {
-        console.error(`Authentication error (${res.status}) deleting /jobs/${jobId}. Redirecting to login.`);
         showToast("Your session may have expired. Please sign in again.", "error");
-        window.dispatchEvent(new CustomEvent('logoutSuccess')); // Update UI if needed
-        Auth.federatedSignIn(); // Redirect to login
-        throw new Error(`Authentication error: ${res.status}`); // Throw to trigger catch block
+        window.dispatchEvent(new CustomEvent('logoutSuccess')); Auth.federatedSignIn();
+        throw new Error(`Authentication error: ${res.status}`);
       }
-      // Handle other HTTP errors
-      const err = await res.json();
-      throw new Error(err.detail || 'Failed to delete job');
+      const errData = await res.json().catch(() => ({ detail: 'Failed to delete job and parse error response.' }));
+      throw new Error(errData.detail || 'Failed to delete job');
     }
+
+    const result = await res.json();
+    showToast(`Job "${result.job_id}" deleted successfully.`, 'success');
+    // UI update will be handled by SSE or direct call to removeJobFromList if SSE is not immediate enough
+    // For immediate feedback if SSE is slow:
     removeJobFromList(jobId);
+
   } catch (err) {
-    console.error(err);
-    showToast(err.message || 'Deletion error', 'error');   // reuse existing toast fn
+    console.error('Error during job deletion:', err);
+    showToast(err.message || 'Deletion error. Please try again.', 'error');
+    if (jobCardElement) jobCardElement.style.opacity = "1";
   }
 }
 
 function removeJobFromList(jobId) {
-  const el = document.querySelector(`[data-job-id="${jobId}"]`);
+  const el = document.querySelector(`.job-card[data-job-id="${jobId}"]`);
   if (el) el.remove();
 
-  // clear details panel if it was showing this job
-  if (window.selectedJobId === jobId) {
-    document.getElementById('jobDetails').innerHTML =
-      '<p class="placeholder">Select a job to view details...</p>';
+  const jobDetailsContainer = document.getElementById("jobDetails");
+  if (String(window.selectedJobId) === String(jobId)) {
+    if (jobDetailsContainer) jobDetailsContainer.innerHTML = '<p class="text-gray-500 italic">Select a job to see details.</p>';
     window.selectedJobId = null;
   }
 
-  // Check if there are no more jobs
   const jobsList = document.getElementById("jobsList");
   if (jobsList && !jobsList.querySelector(".job-card")) {
-    jobsList.innerHTML = '<p class="placeholder">No jobs saved yet. Add a job using the form above.</p>';
+    jobsList.innerHTML = '<p class="text-gray-500 italic">No jobs saved yet. Click "Add Job" to get started.</p>';
   }
 }
 
-// expose for SSE consumer
 window.removeJobFromList = removeJobFromList;
+window.loadJobs = loadJobs;
 
 // --- Processing Indicator Utility ---
 function updateProcessingIndicator(count) {
   const indicator = document.getElementById('savingIndicator');
-  const text      = document.getElementById('savingIndicatorText');
-  if (!indicator || !text) return;
+  const textEl = document.getElementById('savingIndicatorText'); // Renamed for clarity
+  if (!indicator || !textEl) return;
 
   if (count > 0) {
-    indicator.style.display = 'flex';          // garde le spinner visible
-    text.textContent = `Processing ${count} Job${count > 1 ? 's' : ''}`;
-    text.dataset.count = count;
+    indicator.classList.remove('hidden');
+    indicator.classList.add('flex'); // Ensure it's flex if hidden was by display:none
+    textEl.textContent = `Processing ${count} Job${count > 1 ? 's' : ''}...`;
+    textEl.dataset.count = count;
   } else {
-    indicator.style.display = 'none';
-    text.dataset.count = 0;
+    indicator.classList.add('hidden');
+    indicator.classList.remove('flex');
+    textEl.dataset.count = 0;
   }
 }
 window.updateProcessingIndicator = updateProcessingIndicator;

@@ -116,5 +116,5 @@ def delete_job(db: Session, job_id: int, user_id: int):
 
     # Delete the job
     db.delete(db_job)
-    db.commit()
+    db.commit() # Commit the deletion
     return True

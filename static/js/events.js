@@ -23,68 +23,32 @@ function setupEventListeners() {
     resetProfileButton.addEventListener("click", resetProfile);
   }
 
-  // View Profile button and modal
+  // View Profile button - now dispatches an event for Alpine to handle
   const viewProfileButton = document.getElementById("viewProfileButton");
-  const profileModal = document.getElementById("profileModal");
-  const closeProfileModalBtn = document.getElementById("closeProfileModal");
-  if (viewProfileButton && profileModal) {
+  if (viewProfileButton) {
     viewProfileButton.addEventListener("click", function() {
-      profileModal.classList.remove("hidden");
-      profileModal.classList.add("flex");
+      window.dispatchEvent(new CustomEvent('open-profile-modal'));
     });
   }
-  if (closeProfileModalBtn && profileModal) {
-    closeProfileModalBtn.addEventListener("click", function() {
-      profileModal.classList.add("hidden");
-      profileModal.classList.remove("flex");
-    });
-  }
+  // Close profile modal button is handled by Alpine via @click="show = false" or @click.away
 
-  // Modal Elements
-  const addJobModal = document.getElementById("add-job-modal");
+  // Add Job button - now dispatches an event for Alpine to handle
   const addJobBtn = document.getElementById("add-job-btn");
-
-  if (addJobModal && addJobBtn) {
-    const closeModalBtn = addJobModal.querySelector(".close-btn");
-    const modalSaveBtn = document.getElementById("modal-save-btn");
-    const modalCancelBtn = document.getElementById("modal-cancel-btn");
-
-    // Open Modal
+  if (addJobBtn) {
     addJobBtn.addEventListener("click", () => {
-      addJobModal.style.display = ""; // clear lingering inline style
-      addJobModal.classList.remove("hidden");
-      addJobModal.classList.add("flex");
+      window.dispatchEvent(new CustomEvent('open-add-job-modal'));
     });
-
-    // Close Modal via Close button (X)
-    if (closeModalBtn) {
-      closeModalBtn.addEventListener("click", () => {
-        addJobModal.classList.add("hidden");
-        addJobModal.classList.remove("flex");
-      });
-    }
-
-    // Close Modal via Cancel button
-    if (modalCancelBtn) {
-      modalCancelBtn.addEventListener("click", () => {
-        addJobModal.classList.add("hidden");
-        addJobModal.classList.remove("flex");
-      });
-    }
-
-    // Close Modal by clicking outside the modal content
-    window.addEventListener("click", (event) => {
-      if (event.target === addJobModal) {
-        addJobModal.classList.add("hidden");
-        addJobModal.classList.remove("flex");
-      }
-    });
-
-    // Save Job from Modal
-    if (modalSaveBtn) {
-      modalSaveBtn.addEventListener("click", saveModalJob);
-    }
   }
+
+  // Modal save and cancel buttons
+  const modalSaveBtn = document.getElementById("modal-save-btn");
+  const modalCancelBtn = document.getElementById("modal-cancel-btn"); // This button is now handled by Alpine in the template
+
+  if (modalSaveBtn) {
+    modalSaveBtn.addEventListener("click", saveModalJob);
+  }
+  // The old event listeners for opening/closing modals via classList manipulation
+  // and window click are removed as Alpine.js handles this more declaratively.
 }
 
 // Already called from core.js, no need for second DOMContentLoaded listener

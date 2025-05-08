@@ -1,67 +1,59 @@
 // Ultra simple profile formatter
 function formatProfileData(data) {
   if (!data || typeof data !== "object" || Object.keys(data).length === 0)
-    return "<p>No profile data available</p>";
+    return '<p class="text-gray-500 italic">No profile data available</p>';
 
-  // Only if we have actual profile data (skills or sections), add the controls and content
   if (
     !(data.skills && data.skills.length > 0) &&
-    !(data.sections && data.sections.length > 0)
+    !(data.sections && data.sections.length > 0) &&
+    !Object.entries(data).filter(([key]) => !["id", "email", "owner_email", "contactInformation", "skills", "sections"].includes(key) && data[key] !== null && data[key] !== undefined).length > 0
   ) {
-    return "<p>No profile data available</p>";
+    return '<p class="text-gray-500 italic">No profile data available</p>';
   }
 
-  // Profile content wrapper
   let html = `
-    <div class="profile-content">
+    <div class="space-y-3">
   `;
-  let sectionIndex = 0; // Counter for unique IDs
 
-  // Helper function to generate collapse structure
-  const createCollapsibleSection = (title, contentHtml) => {
-    const collapseId = `profileSectionCollapse${sectionIndex++}`;
-    return (
-      `<div class="section">` +
-      `<h2 class="collapsible-header" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true" aria-controls="${collapseId}">` +
-      `<span>${title}</span>` + // Wrap title in span for flex layout
-      `<span class="collapse-icon">` +
-      `<i class="bi bi-chevron-down"></i>` +
-      `</span>` +
-      `</h2>` +
-      `<div class="collapse show" id="${collapseId}">` +
-      `<div class="section-content">${contentHtml}</div>` + // Inner div for padding/margin
-      `</div>` +
-      `</div>`
-    );
+  const createCollapsibleSection = (title, contentHtml, initiallyExpanded = true) => {
+    return `
+      <div x-data="{ expanded: ${initiallyExpanded} }" class="border border-gray-200 rounded-md">
+        <h2 @click="expanded = !expanded" class="flex justify-between items-center cursor-pointer p-3 bg-gray-50 hover:bg-gray-100 rounded-t-md">
+          <span class="font-semibold text-gray-700">${title}</span>
+          <svg class="w-5 h-5 text-gray-500 transform transition-transform duration-200" :class="{ 'rotate-180': expanded }" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+          </svg>
+        </h2>
+        <div x-show="expanded" x-transition class="p-3 border-t border-gray-200 text-sm text-gray-600">
+          ${contentHtml}
+        </div>
+      </div>
+    `;
   };
 
-  // Display skills section first (only special case)
-  if (data.skills) {
-    const skillsHtml =
-      '<ul class="skills">' +
-      data.skills.map((skill) => `<li>${String(skill).trim()}</li>`).join("") +
-      "</ul>";
-    html += createCollapsibleSection("Skills", skillsHtml);
+  if (data.skills && data.skills.length > 0) {
+    const skillsHtml = `
+      <ul class="flex flex-wrap gap-2 list-none p-0 mt-2">
+        ${data.skills.map((skill) => `<li class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-medium">${String(skill).trim()}</li>`).join("")}
+      </ul>`;
+    html += createCollapsibleSection("Skills", skillsHtml, true);
   }
 
-  // Process sections array
-  if (data.sections) {
+  if (data.sections && data.sections.length > 0) {
     data.sections.forEach((section) => {
       let sectionContentHtml = "";
-      // Direct entries in section = bullet points
       if (section.entries && section.entries.length > 0) {
-        sectionContentHtml += "<ul>";
+        sectionContentHtml += '<ul class="list-disc pl-5 space-y-1 mt-2">';
         section.entries.forEach((entry) => {
           sectionContentHtml += `<li>${entry}</li>`;
         });
         sectionContentHtml += "</ul>";
       }
-      // Subsections = h3 headers with indented bullet points
       if (section.subsections && section.subsections.length > 0) {
         section.subsections.forEach((subsection) => {
-          sectionContentHtml += `<h3>${subsection.title}</h3>`;
+          sectionContentHtml += `<h3 class="font-semibold text-gray-700 mt-3 mb-1 text-base">${subsection.title}</h3>`;
           if (subsection.entries && subsection.entries.length > 0) {
-            sectionContentHtml += '<ul class="indented">';
+            sectionContentHtml += '<ul class="list-disc pl-5 space-y-1 mt-1">';
             subsection.entries.forEach((entry) => {
               sectionContentHtml += `<li>${entry}</li>`;
             });
@@ -69,210 +61,62 @@ function formatProfileData(data) {
           }
         });
       }
-      html += createCollapsibleSection(section.title, sectionContentHtml);
+      html += createCollapsibleSection(section.title, sectionContentHtml, true);
     });
   }
 
-  // Process any remaining top-level fields (except ignored ones)
   const ignoredFields = new Set([
-    "id",
-    "email",
-    "owner_email",
-    "contactInformation",
-    "skills",
-    "sections",
+    "id", "email", "owner_email", "contactInformation", "skills", "sections",
   ]);
   Object.entries(data)
     .filter(
       ([key, value]) =>
-        !ignoredFields.has(key) && value !== null && value !== undefined,
+        !ignoredFields.has(key) && value !== null && value !== undefined && String(value).trim() !== "" && (!Array.isArray(value) || value.length > 0)
     )
     .forEach(([key, value]) => {
-      // Format title
       const sectionTitle = key
-        .split("_")
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .replace(/_/g, " ")
+        .replace(/([A-Z])/g, " $1") // Add space before uppercase letters for camelCase/PascalCase
+        .trim()
+        .split(" ")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
         .join(" ");
+
       let sectionContentHtml = "";
-      // Simple content handling
       if (typeof value === "string") {
-        sectionContentHtml += `<p>${value}</p>`;
-      } else if (Array.isArray(value)) {
-        sectionContentHtml += "<ul>";
+        sectionContentHtml += `<p class="whitespace-pre-wrap mt-2">${value}</p>`;
+      } else if (Array.isArray(value) && value.length > 0) {
+        sectionContentHtml += '<ul class="list-disc pl-5 space-y-1 mt-2">';
         value.forEach((item) => {
           if (typeof item === "string") {
             sectionContentHtml += `<li>${item}</li>`;
-          } else if (typeof item === "object") {
-            // Just dump first property as text
-            const text = Object.values(item)[0] || "Item";
-            sectionContentHtml += `<li>${text}</li>`;
+          } else if (typeof item === "object" && item !== null) {
+            const itemContent = Object.entries(item)
+              .map(([itemKey, itemValue]) => `<strong>${itemKey.replace(/_/g, " ")}:</strong> ${itemValue}`)
+              .join('<br>');
+            sectionContentHtml += `<li>${itemContent}</li>`;
           }
         });
         sectionContentHtml += "</ul>";
+      } else if (typeof value === 'object' && value !== null && Object.keys(value).length > 0) {
+        sectionContentHtml += '<div class="space-y-1 mt-2">';
+        for (const [objKey, objValue] of Object.entries(value)) {
+          const formattedKey = objKey.replace(/_/g, " ").split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+          sectionContentHtml += `<div><strong>${formattedKey}:</strong> ${objValue}</div>`;
+        }
+        sectionContentHtml += '</div>';
       }
-      html += createCollapsibleSection(sectionTitle, sectionContentHtml);
+
+      if (sectionContentHtml.trim() !== "") {
+        html += createCollapsibleSection(sectionTitle, sectionContentHtml, false); // Other sections default to collapsed
+      }
     });
 
-  html += "</div>"; // Close profile content
+  html += "</div>";
   return html;
 }
 
-// Add minimal CSS for the simplified structure
-document.addEventListener("DOMContentLoaded", function () {
-  const style = document.createElement("style");
-  style.textContent = `
-        /* Simple collapse behavior sans Bootstrap */
-        .collapse {
-            visibility: visible !important; /* override Tailwind's visibility:collapse */
-        }
-        .collapse:not(.show) {
-            display: none;
-        }
-        .collapse.show {
-            display: block;
-        }
-        .profile-content {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            margin-top: 15px;
-        }
-        /* Profile Controls Bar */
-        .profile-controls {
-            display: flex;
-            justify-content: flex-start;
-            margin-bottom: 5px;
-        }
-        .profile-controls a {
-            display: inline-flex;
-            align-items: center;
-        }
-        .profile-controls a:hover {
-            color: #0d6efd !important;
-            text-decoration: underline !important;
-        }
-        .section {
-            padding: 8px;
-        }
-        .section h2 {
-            margin-bottom: 0px;
-        }
-        h2 {
-            font-size: 1.4em;
-            margin-bottom: 5px;
-            padding-bottom: 4px;
-            border-bottom: 1px solid #ddd;
-        }
-        h3 {
-            font-size: 1.2em;
-            margin-top: 10px;
-            margin-bottom: 10px;
-            font-weight: 600;
-            color: #2c5282;
-            padding-bottom: 3px;
-            border-bottom: 1px dotted #cbd5e0;
-        }
-        .section-content {
-            padding: 10px 0 5px 15px;
-            color: #374151; /* Gray-700 for readability */
-        }
-        .section-content, .section-content h3, .section-content li, .section-content p {
-            color: #374151;
-        }
-        ul {
-            margin-top: 8px;
-            margin-bottom: 15px;
-        }
-        li {
-            margin-bottom: 6px;
-            line-height: 1.4;
-        }
-        /* Styles for Collapsible Header */
-        .collapsible-header {
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 15px;
-            border-bottom: 1px solid #ddd;
-            margin-bottom: 0;
-            transition: background-color 0.2s ease-in-out;
-        }
-        /* Style the icon container */
-        .collapse-icon {
-           font-size: 1.1em;
-           font-weight: bold;
-           color: #495057;
-           transition: transform 0.2s ease-in-out; /* Keep transition for potential future use */
-        }
-        /* Icon visibility rules */
-        .collapsible-header .bi-chevron-up {
-            display: none; /* Hide UP by default */
-        }
-        .collapsible-header .bi-chevron-down {
-            display: inline-block; /* Show DOWN by default */
-        }
-        .collapsible-header[aria-expanded="true"] .bi-chevron-up {
-            display: inline-block; /* Show UP when expanded */
-        }
-        .collapsible-header[aria-expanded="true"] .bi-chevron-down {
-            display: none; /* Hide DOWN when expanded */
-        }
-        .collapsible-header:hover {
-            background-color: #e9ecef; /* More noticeable hover effect */
-        }
-        /* Ensure collapsed content doesn't have extra margin */
-        .collapse .section-content > *:first-child {
-            margin-top: 0;
-        }
-        .collapse .section-content > *:last-child {
-            margin-bottom: 0;
-        }
-        ul.indented {
-            margin-left: 20px;
-        }
-        ul.skills {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            list-style: none;
-            padding-left: 0;
-            margin-top: 12px;
-        }
-        ul.skills li {
-            background-color: #f5f9ff;
-            padding: 6px 12px;
-            border-radius: 20px;
-            display: inline-block;
-            font-size: 0.95em;
-            color: #2c5282;
-            border: 1px solid #cbd5e0;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            transition: all 0.2s ease;
-        }
-        ul.skills li:hover {
-            background-color: #ebf4ff;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-    `;
-  document.head.appendChild(style);
-
-  // Lightweight collapse toggle (no Bootstrap JS required)
-  document.addEventListener("click", function (e) {
-    const header = e.target.closest(".collapsible-header");
-    if (!header) return;
-    const collapseId = header.getAttribute("data-bs-target");
-    if (!collapseId) return;
-    const target = document.querySelector(collapseId);
-    if (!target) return;
-    const isShown = target.classList.contains("show");
-    if (isShown) {
-      target.classList.remove("show");
-      header.setAttribute("aria-expanded", "false");
-    } else {
-      target.classList.add("show");
-      header.setAttribute("aria-expanded", "true");
-    }
-  });
-});
+// Remove the DOMContentLoaded listener that injects CSS.
+// All styling should now be handled by Tailwind classes applied above
+// or global styles in your main CSS file if necessary.
+// The lightweight collapse toggle is also replaced by Alpine.js x-data, @click, x-show.
