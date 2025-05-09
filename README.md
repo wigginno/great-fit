@@ -1,5 +1,5 @@
 # Great Fit 🕴️🔍  
-LLM-powered job‑application assistant that scores how well you match a job and tells you how to improve.
+LLM-powered job application assistant that scores how well you match a job and tells you how to improve.
 
 ---
 
