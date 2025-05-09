@@ -1,4 +1,4 @@
-# Great Fit 🕴️🔍  
+# Great Fit
 LLM-powered job application assistant that scores how well you match a job and tells you how to improve.
 
 ---
@@ -11,7 +11,7 @@ LLM-powered job application assistant that scores how well you match a job and t
 
 ---
 
-## ▶️ Demo
+## Demo
 
 https://github.com/user-attachments/assets/e503475b-6303-4ab0-b3ed-64473afce8a0
 
@@ -102,5 +102,3 @@ Runs against an ephemeral SQLite DB defined in `conftest.py`.
 ## License
 
 MIT © 2025 Great Fit ( Noah Wiggin )
-
-```
