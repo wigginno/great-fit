@@ -16,18 +16,16 @@ If any variable is missing the dependency raises 500 to signal mis-config.
 from __future__ import annotations
 
 import os
-import structlog
 from functools import lru_cache
-from settings import get_settings
 from typing import Annotated, Optional
 import time
-
+import structlog
 import httpx
 from fastapi import Depends, HTTPException, status, Request
 from jose import jwt, JWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-
+from settings import get_settings
 from database import get_db
 import crud
 

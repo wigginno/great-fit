@@ -19,7 +19,6 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id")) # Keep simple FK
     title = Column(String)
     company = Column(String)
     description = Column(String) # Assuming this holds cleaned_text or original
@@ -27,8 +26,6 @@ class Job(Base):
     ranking_explanation = Column(Text, nullable=True)
     tailoring_suggestions = Column(JSON, nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id")) # Re-add owner_id Column for relationship
-    score = Column(Integer, nullable=True) # Added field for job score
-    explanation = Column(Text, nullable=True) # Added field for score explanation
     created_at = Column(DateTime(timezone=True), server_default=func.now()) # Re-add created_at
 
     owner = relationship("User", back_populates="jobs", foreign_keys=[owner_id]) # Use standard relationship

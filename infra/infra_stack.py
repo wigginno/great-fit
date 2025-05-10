@@ -70,20 +70,9 @@ class GreatFitInfraStack(Stack):
             "CognitoDomainSecretLookup",
             "greatfit/cognito/domain"
         )
-        db_secret = sm.Secret.from_secret_name_v2(
-            self,
-            "DBSecretNameLookup",
-            "greatfit/db/secret_name"
-        )
-        db_endpoint_secret = sm.Secret.from_secret_name_v2(
-            self,
-            "DBEndpointLookup",
-            "greatfit/db/endpoint"
-        )
-
-        db_username = db_secret.secret_value_from_json("username").to_string()
-        db_password = db_secret.secret_value_from_json("password").to_string()
-        db_endpoint = db_endpoint_secret.secret_value_from_json("DB_ENDPOINT")
+        # Removed redundant db_secret and db_endpoint_secret lookups (formerly lines 73-82)
+        # and variables db_username, db_password, db_endpoint (formerly lines 84-86).
+        # These will be derived from the CDK-created 'cluster' object.
         user_pool_id_string = user_pool_id_secret.secret_value_from_json("GF_USER_POOL_ID").to_string()
         user_pool_arn_string = user_pool_arn_secret.secret_value_from_json("GF_USER_POOL_ARN").to_string()
         user_pool_client_id_string = user_pool_client_id_secret.secret_value_from_json("GF_USER_POOL_CLIENT_ID").to_string()
@@ -103,7 +92,9 @@ class GreatFitInfraStack(Stack):
             "AppRunnerInstanceRole",
             assumed_by=iam.ServicePrincipal("tasks.apprunner.amazonaws.com"),
         )
-        db_secret.grant_read(instance_role)
+        # Assuming 'cluster' is the rds.DatabaseCluster instance
+        # and cluster.secret is its associated secret.
+        cluster.secret.grant_read(instance_role) # Grant read to the new cluster secret
         openrouter_secret.grant_read(instance_role)
         stripe_secret_key.grant_read(instance_role)
         stripe_price_id_50_secret.grant_read(instance_role)
@@ -111,7 +102,7 @@ class GreatFitInfraStack(Stack):
         user_pool_arn_secret.grant_read(instance_role)
         user_pool_client_id_secret.grant_read(instance_role)
         cognito_domain_secret.grant_read(instance_role)
-        db_endpoint_secret.grant_read(instance_role)
+        # Removed grant_read for db_endpoint_secret
 
         # Allow basic Cognito read actions (ListUsers for email lookup etc.)
         instance_role.add_to_policy(
@@ -127,7 +118,18 @@ class GreatFitInfraStack(Stack):
 
         db_name = "greatfit"
         db_port = "5432"
-        database_url = (f"postgresql://{db_username}:{db_password}@{db_endpoint}:{db_port}/{db_name}")
+        # DB connection details from the CDK-created cluster
+        # Assuming 'cluster' is the rds.DatabaseCluster instance.
+        # db_name ("greatfit") and db_port ("5432") are defined above (lines 128, 129).
+        # Username for the AppRunner service, taken from cluster credentials (e.g., "gfadmin").
+        db_user_for_app = "gfadmin"
+        # Password token from the cluster's secret.
+        db_password_token_for_app = cluster.secret.secret_value_from_json("password")
+        # Hostname from the cluster's endpoint.
+        db_host_for_app = cluster.cluster_endpoint.hostname
+        
+        # Reconstruct DATABASE_URL using cluster details for the AppRunner service.
+        database_url_for_app = f"postgresql://{db_user_for_app}:{db_password_token_for_app.to_string()}@{db_host_for_app}:{db_port}/{db_name}"
 
         obs_cfg = apprunner.ObservabilityConfiguration(
             self, "Obs",
@@ -144,20 +146,20 @@ class GreatFitInfraStack(Stack):
                 image_configuration=apprunner.ImageConfiguration(
                     port=8080,
                     environment_variables={
-                        "DB_HOST": db_endpoint,
-                        "DB_PORT": "5432",
-                        "DB_NAME": db_name,
-                        "DB_USER": db_username,
+                        "DB_HOST": db_host_for_app, # Now using cluster.cluster_endpoint.hostname via db_host_for_app
+                        "DB_PORT": db_port, # Remains "5432", defined at line 129
+                        "DB_NAME": db_name, # Remains "greatfit", defined at line 128
+                        "DB_USER": db_user_for_app, # Now using username from cluster (e.g., "gfadmin") via db_user_for_app
                         "AWS_REGION": self.region,
                         "COGNITO_USER_POOL_ID": user_pool_id_string,
                         "COGNITO_APP_CLIENT_ID": user_pool_client_id_string,
                         "COGNITO_DOMAIN": cognito_domain_string,
                         "AUTH_BILLING_ENABLED": "true",
-                        "DATABASE_URL": database_url,
+                        "DATABASE_URL": database_url_for_app, # Now reconstructed using cluster details
                     },
                     environment_secrets={
                         "DB_PASSWORD": apprunner.Secret.from_secrets_manager(
-                            db_secret, field="password"
+                            cluster.secret, field="password" # Now using the cluster's own secret
                         ),
                         "OPENROUTER_API_KEY": apprunner.Secret.from_secrets_manager(
                             openrouter_secret, field="OPENROUTER_API_KEY"
@@ -180,7 +182,7 @@ class GreatFitInfraStack(Stack):
 
         # Outputs
         CfnOutput(self, "DbEndpoint", value=cluster.cluster_endpoint.hostname)
-        CfnOutput(self, "DbSecretArn", value=db_secret.secret_arn)
+        CfnOutput(self, "DbSecretArn", value=cluster.secret.secret_arn) # Now using the cluster's secret ARN
         CfnOutput(self, "EcrRepoUri", value=ecr_repo.repository_uri)
         CfnOutput(self, "AppRunnerUrl", value=apprunner_service.service_url)
 

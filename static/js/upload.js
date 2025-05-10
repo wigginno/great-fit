@@ -121,49 +121,19 @@ function resetFileUpload() {
   }
 }
 
-// For backward compatibility
-function clearResumeUpload() {
-  resetFileUpload();
-}
-
 // Initialize custom file upload functionality
 function initializeFileUpload() {
-  // Try to find the elements
-  let uploadArea = document.getElementById("uploadArea");
-  let fileInput = document.getElementById("resumeFile");
-
-  // If elements aren't found immediately, use a retry mechanism
-  if (!uploadArea || !fileInput) {
-    console.log("Upload elements not found on first try, will retry when DOM is fully loaded");
-    
-    // Set up a retry once the DOM is fully loaded
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", function() {
-        console.log("DOM loaded, retrying to find upload elements");
-        initializeUploadElements();
-      });
-    } else {
-      // DOM already loaded, try with a slight delay
-      setTimeout(initializeUploadElements, 500);
-    }
-    return;
-  }
-
-  // If we got here, elements were found on first try
-  initializeUploadEventHandlers(uploadArea, fileInput);
-}
-
-// Helper function to find elements and initialize them
-function initializeUploadElements() {
   const uploadArea = document.getElementById("uploadArea");
   const fileInput = document.getElementById("resumeFile");
 
   if (!uploadArea || !fileInput) {
-    console.error("Upload elements still not found after DOM loaded");
+    console.error("Upload elements (uploadArea or resumeFile) not found on initial attempt. Cannot initialize file upload.");
+    // Optionally, you could re-introduce a single retry here if the 100ms DOMContentLoaded timeout isn't always enough,
+    // but the goal is to remove the complex internal retry loop from the original function.
+    // For now, let's assume the DOMContentLoaded timeout is the primary mechanism.
     return;
   }
-  
-  console.log("Upload elements found successfully");
+  // Proceed with initializeUploadEventHandlers directly
   initializeUploadEventHandlers(uploadArea, fileInput);
 }
 

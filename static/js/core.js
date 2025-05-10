@@ -2,10 +2,6 @@
  * core.js - Core initialization and setup
  * Contains the main initialization logic and event binding
  */
-/**
- * core.js - Core initialization and setup
- * Contains the main initialization logic and event binding
- */
 
 document.addEventListener("DOMContentLoaded", function () {
   // Hide saved jobs section initially

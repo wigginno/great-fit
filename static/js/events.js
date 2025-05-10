@@ -14,7 +14,7 @@ function setupEventListeners() {
   // Job details container for ranking
   const jobDetails = document.getElementById("jobDetails");
   if (jobDetails) {
-    jobDetails.addEventListener("click", handleJobActions);
+    // jobDetails.addEventListener("click", handleJobActions); // Removed as per issue 9.1
   }
 
   // Reset profile button

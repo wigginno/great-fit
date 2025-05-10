@@ -58,7 +58,6 @@ def create_or_update_user_profile(
 def create_job(db: Session, job: schemas.JobCreate, user_id: int):
     """Creates a new job entry associated with a user, using ranking_score and ranking_explanation only."""
     db_job = models.Job(
-        user_id=user_id,
         owner_id=user_id,
         title=job.title,
         company=job.company,
@@ -74,13 +73,13 @@ def create_job(db: Session, job: schemas.JobCreate, user_id: int):
 
 def get_jobs_for_user(db: Session, user_id: int):
     """Retrieves all jobs for a specific user."""
-    return db.query(models.Job).filter(models.Job.user_id == user_id).order_by(models.Job.created_at.desc()).all()
+    return db.query(models.Job).filter(models.Job.owner_id == user_id).order_by(models.Job.created_at.desc()).all()
 
 
 def get_job(db: Session, job_id: int, user_id: int):
     return (
         db.query(models.Job)
-        .filter(models.Job.id == job_id, models.Job.user_id == user_id)
+        .filter(models.Job.id == job_id, models.Job.owner_id == user_id)
         .first()
     )
 
@@ -90,7 +89,7 @@ def update_job_ranking(
 ):
     db_job = (
         db.query(models.Job)
-        .filter(models.Job.id == job_id, models.Job.user_id == user_id)
+        .filter(models.Job.id == job_id, models.Job.owner_id == user_id)
         .first()
     )
     if not db_job:
@@ -108,7 +107,7 @@ def delete_job(db: Session, job_id: int, user_id: int):
     # Find the job for this user
     db_job = (
         db.query(models.Job)
-        .filter(models.Job.id == job_id, models.Job.user_id == user_id)
+        .filter(models.Job.id == job_id, models.Job.owner_id == user_id)
         .first()
     )
     if not db_job:

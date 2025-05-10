@@ -26,6 +26,16 @@ async function loadJobs() {
 
     const jobs = await response.json();
 
+    let processingCount = 0;
+    if (jobs && Array.isArray(jobs)) { // Ensure jobs is an array
+      jobs.forEach(job => {
+        if (job.ranking_score === null || job.ranking_score === undefined) {
+          processingCount++;
+        }
+      });
+    }
+    window.updateProcessingIndicator(processingCount);
+
     if (jobs.length === 0) {
       jobsContainer.innerHTML = '<p class="text-gray-500 italic">No jobs saved yet. Click "Add Job" to get started.</p>';
       return;
@@ -82,12 +92,7 @@ async function loadJobs() {
 // Function to save job from modal
 async function saveModalJob() {
   const rawJobDescription = document.getElementById("rawJobDescription");
-  const modalSaveBtn = document.getElementById("modal-save-btn");
-  const modalCancelBtn = document.getElementById("modal-cancel-btn"); // Though Alpine handles close, we might disable it
-  const modalLoadingIndicator = document.getElementById("modal-loading-indicator");
   const modalErrorDiv = document.getElementById("modal-error");
-
-  modalErrorDiv.textContent = ""; // Clear previous errors
 
   if (!rawJobDescription.value.trim()) {
     modalErrorDiv.textContent = "Job description is required.";
@@ -95,50 +100,15 @@ async function saveModalJob() {
     return;
   }
 
-  try {
-    modalSaveBtn.disabled = true;
-    if(modalCancelBtn) modalCancelBtn.disabled = true; // If it exists and is not purely Alpine controlled
-    modalLoadingIndicator.classList.remove("hidden");
-
-    const markdownValue = rawJobDescription.value;
-
-    const payload = { markdown_content: markdownValue };
-
-    const response = await fetch(`/jobs/markdown`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(await window.authHeaders()) },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        showToast("Your session may have expired. Please sign in again.", "error");
-        window.dispatchEvent(new CustomEvent('logoutSuccess'));
-        Auth.federatedSignIn();
-        throw new Error(`Authentication error: ${response.status}`);
-      }
-      let errorText = `HTTP error! status: ${response.status}`;
-      try {
-        const errorData = await response.json();
-        errorText = errorData.detail || errorText;
-      } catch (_) {}
-      throw new Error(errorText);
-    }
-
-    // Success
-    showToast("Job submitted - processing in background...", "success");
-    window.dispatchEvent(new CustomEvent('close-add-job-modal')); // Closes modal and clears form
-    await loadJobs(); // Refresh list
-
-  } catch (error) {
-    console.error("Error saving job:", error);
-    showToast(`Job save failed: ${error.message}`, "error");
-    modalErrorDiv.textContent = `Error: ${error.message}`;
-  } finally {
-    modalSaveBtn.disabled = false;
-    if(modalCancelBtn) modalCancelBtn.disabled = false;
-    modalLoadingIndicator.classList.add("hidden");
-  }
+  const payload = { content: rawJobDescription.value };
+  showToast("Job submitted - processing in background...", "success");
+  window.dispatchEvent(new CustomEvent('close-add-job-modal'));
+  await fetch(`/jobs/markdown`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await window.authHeaders()) },
+    body: JSON.stringify(payload),
+  });
+  await loadJobs();
 }
 
 // Function to handle clicking on a job in the jobs list
@@ -170,13 +140,6 @@ function handleJobClick(event) {
       window.selectedJobId = jobId;
     }
   }
-}
-
-// Function to handle job actions (like ranking) - This seems to be for buttons within the details view
-function handleJobActions(event) {
-  // Example: if you add rank/tailor buttons inside #jobDetails
-  // const rankBtn = event.target.closest(".rank-job-btn");
-  // if (rankBtn) { /* ... */ }
 }
 
 // Function to show job details when a card is clicked
