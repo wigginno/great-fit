@@ -170,6 +170,13 @@ function initializeUploadElements() {
 // Setup event handlers for the upload functionality
 function initializeUploadEventHandlers(uploadArea, fileInput) {
 
+  if (uploadArea.dataset.uploadHandlersInitialized) {
+    console.log("Upload event handlers already initialized for this area. Skipping.");
+    return;
+  }
+  uploadArea.dataset.uploadHandlersInitialized = "true";
+  console.log("Initializing upload event handlers");
+
   // Make the upload area clickable
   uploadArea.addEventListener("click", function() {
     fileInput.click();
