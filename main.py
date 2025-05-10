@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Union
 import json
 from pydantic import BaseModel
 import os
@@ -111,7 +111,7 @@ class ConnectionManager:
             logger.info("SSE connection closed", user_id=user_id)
 
     async def send_personal_message(
-        self, message: str | dict, user_id: int, event: str = "message"
+        self, message: Union[str, dict], user_id: int, event: str = "message"
     ) -> None:
         if user_id in self.active_connections:
             # If the message is a dict, inject request_id for correlation if missing
@@ -407,7 +407,7 @@ async def process_job_in_background(
     user_id: int,
     markdown_content: str,
     manager: ConnectionManager,
-    db_session_override: Session | None = None,
+    db_session_override: Union[Session, None] = None,
     metrics=None,
 ):
     metrics.set_namespace("GreatFitJobs")
@@ -415,8 +415,8 @@ async def process_job_in_background(
     metrics.set_property("user_id", user_id)
     job_id = None
     """Background task to process a job description. Can use an override session for testing."""
-    db_session: Session | None = None # Initialize
-    job_id: int | None = None # To store the job ID once created
+    db_session: Optional[Session] = None
+    job_id: Optional[int] = None # To store the job ID once created
     session_created_internally = False # Flag to track if we need to close the session
 
     try:
@@ -937,7 +937,7 @@ from auth import verify_token  # already present
 from database import SessionLocal
 
 @app.get("/stream-jobs")
-async def stream_jobs(request: Request, token: str | None = None, user_id: int | None = None):
+async def stream_jobs(request: Request, token: Union[str, None] = None, user_id: Union[int, None] = None):
     """Endpoint for Server-Sent Events to stream new job updates."""
     logger = structlog.get_logger("uvicorn.error")
     settings = get_settings()

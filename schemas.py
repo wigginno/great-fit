@@ -58,9 +58,9 @@ class JobBase(BaseModel):
 
 
 class JobCreate(JobBase):
-    ranking_score: float | None = None
-    ranking_explanation: str | None = None
-    tailoring_suggestions: list[str] | None = None
+    ranking_score: Union[float, None] = None
+    ranking_explanation: Union[str, None] = None
+    tailoring_suggestions: Union[list[str], None] = None
 
 
 class Job(JobBase):

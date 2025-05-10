@@ -2,7 +2,7 @@ import hashlib
 import functools
 import structlog
 from sqlalchemy.orm import Session
-from typing import Any
+from typing import Any, Union
 import fastapi
 import schemas
 import models
@@ -101,7 +101,7 @@ call_llm_to_clean_job_description_cached = cache_llm_response(
 
 async def clean_job_description(
     raw_markdown: str,
-) -> schemas.CleanedJobDescription | None:
+) -> Union[schemas.CleanedJobDescription, None]:
     """Cleans job description markdown using a cached LLM call."""
     logger.info("Attempting to clean job description using cached LLM call.")
     cleaned_data = await call_llm_to_clean_job_description_cached(raw_markdown)
@@ -189,7 +189,7 @@ async def process_resume_upload(resume: fastapi.UploadFile) -> dict:
     return parsed_data.model_dump() if parsed_data else {}
 
 
-async def generate_tailoring_suggestions(job: models.Job, db: Session) -> str | None:
+async def generate_tailoring_suggestions(job: models.Job, db: Session) -> Union[str, None]:
     """Fetches user profile and generates tailoring suggestions for a given job."""
     if not job.user_id:
         print(f"Error: Job {job.id} has no associated user_id.")

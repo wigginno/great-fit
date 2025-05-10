@@ -19,7 +19,7 @@ import os
 import structlog
 from functools import lru_cache
 from settings import get_settings
-from typing import Annotated
+from typing import Annotated, Optional
 import time
 
 import httpx
@@ -36,7 +36,7 @@ logger = structlog.get_logger(__name__)
 # Authentication and billing toggle is now managed via settings.py (auth_billing_enabled)
 class TokenPayload(BaseModel):
     sub: str
-    email: str | None = None
+    email: Optional[str] = None
     exp: int
     aud: str
 
@@ -113,7 +113,7 @@ def _verify_token(token: str) -> TokenPayload:
 
 
 # Helper to extract Authorization header (works with FastAPI DI)
-def _get_authorization_header(request: Request) -> str | None:
+def _get_authorization_header(request: Request) -> Optional[str]:
     return request.headers.get("Authorization")
 
 
@@ -121,7 +121,7 @@ def _get_authorization_header(request: Request) -> str | None:
 UserInDB = dict  # alias for crud.User object but avoid circular import typing
 
 async def get_current_user(
-    authorization: Annotated[str | None, Depends(_get_authorization_header)],
+    authorization: Annotated[Optional[str], Depends(_get_authorization_header)],
     db: Session = Depends(get_db),
 ) -> UserInDB:
     if not get_settings().auth_billing_enabled:
