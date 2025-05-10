@@ -116,7 +116,6 @@ async def call_llm(
     user_prompt: str,
     model_config: dict,
     response_model: Optional[BaseModel] = None,
-    max_retries: int = 3,
 ) -> Union[str, BaseModel]:
     """Call LLM for a specific task."""
 

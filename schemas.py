@@ -65,7 +65,7 @@ class JobCreate(JobBase):
 
 class Job(JobBase):
     id: int
-    user_id: int
+    owner_id: int
     ranking_score: Union[float, None] = None
     ranking_explanation: Union[str, None] = None
     tailoring_suggestions: Union[str, None] = None
@@ -74,10 +74,10 @@ class Job(JobBase):
 
 
 # --- Request model for raw markdown from Chrome extension ---
-class JobMarkdownRequest(BaseModel):
-    markdown_content: str
-class RawJobInput(BaseModel):
-    raw_description: str
+# class JobMarkdownRequest(BaseModel):
+#     markdown_content: str
+class JobContentInput(BaseModel): # Renamed from RawJobInput
+    content: str
 
 
 # --- Pydantic Models for Tailoring Suggestions --- #

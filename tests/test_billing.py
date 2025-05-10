@@ -7,17 +7,15 @@ import stripe
 import json
 from typing import Optional
 
-# Assuming your models and crud are accessible
 import models
 import crud
 import schemas
 from main import process_job_in_background, app, get_current_user, get_settings
 from settings import Settings
 
-# --- Test User Creation Helper (or use a fixture if preferred) ---
+# --- Test User Creation Helper ---
 def create_test_user(db: Session, email: str = "test@example.com", credits: int = 10) -> models.User:
     """Helper to create a user directly in the test database."""
-    # Create a unique cognito_sub based on email to avoid constraint errors
     cognito_sub = f"sub-for-{email.replace('@', '-')}"
     user = models.User(email=email, cognito_sub=cognito_sub, credits=credits)
     db.add(user)
@@ -26,9 +24,6 @@ def create_test_user(db: Session, email: str = "test@example.com", credits: int 
     return user
 
 # --- Tests ---
-
-# Note: The /jobs/markdown endpoint just queues the background task.
-# Testing the credit logic requires testing process_job_in_background directly.
 
 @pytest.mark.asyncio
 async def test_process_job_insufficient_credits(db_session: Session):
@@ -61,16 +56,6 @@ async def test_process_job_insufficient_credits(db_session: Session):
 
     # Check that an error message was sent via the manager
     mock_manager.send_personal_message.assert_awaited_once()
-    # Original check (arguments seem correct based on main.py, but assert_awaited_once_with failed):
-    # mock_manager.send_personal_message.assert_awaited_once_with(
-    #     {
-    #         "error": "Insufficient Credits",
-    #         "message": "You need more credits to save a new job.",
-    #         "credits_needed": 1
-    #     },
-    #     user.id,
-    #     event="job_error",
-    # )
 
 @pytest.mark.asyncio
 async def test_process_job_sufficient_credits(db_session: Session):
@@ -94,7 +79,7 @@ async def test_process_job_sufficient_credits(db_session: Session):
 
         # 2. Act: Call the actual background task function
         # Pass the test session to the background task
-        await process_job_in_background(user.id, markdown_content, mock_manager, db_session_override=db_session)
+        await process_job_in_background(user.id, markdown_content, mock_manager, db_session)
 
         # 3. Assert
         # Assert credits were deducted

@@ -1,6 +1,11 @@
-from fastapi.responses import RedirectResponse
-import traceback, sys
 import asyncio
+from typing import List, Optional, Union
+import json
+import os
+import tempfile
+import logging
+
+from fastapi.responses import RedirectResponse
 from fastapi import (
     FastAPI,
     Depends,
@@ -9,38 +14,34 @@ from fastapi import (
     File,
     Request,
     Header,
+    Body,
+    status,
 )
-from fastapi import Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from typing import List, Optional, Union
-import json
 from pydantic import BaseModel
-import os
-import tempfile
-from fastapi import status
 import fitz
 from docx import Document
-import logging
-from observability import init_observability
-import asyncio
 from sse_starlette.sse import EventSourceResponse
 import openai
 import stripe
 import structlog
 from structlog.contextvars import get_contextvars
+from aws_embedded_metrics import metric_scope
 
 import models
 import schemas
 import crud
 import logic
 from database import SessionLocal, create_db_and_tables, get_db
-from auth import get_current_user
+from auth import get_current_user, verify_token
 from settings import get_settings, Settings
 from request_id_middleware import RequestIdMiddleware
+from observability import init_observability
+
 
 # Initialise observability before creating app
 init_observability()
@@ -61,16 +62,13 @@ logging.basicConfig(level=logging.INFO)
 # Semaphore to limit concurrent database writes for SQLite
 db_write_semaphore = asyncio.Semaphore(1)
 
-# --- CORS Middleware --- Set up CORS
-# Allow all origins for PoC purposes
-# TODO: Replace with specific origins for production
+# --- CORS Middleware ---
 origins = [
-    "http://localhost", # Add your local dev origin if different
-    "http://localhost:8000", # Example if frontend runs on 8000
+    "http://localhost",
+    "http://localhost:8000",
     "http://127.0.0.1",
     "http://127.0.0.1:8000",
-    "https://greatfit.app", # Assuming this is your production frontend
-    # Add other origins as needed
+    "https://greatfit.app",
 ]
 
 app.add_middleware(
@@ -182,9 +180,8 @@ async def read_root(
         "index.html",
         {
             "request": request,
-            "env": "dev", # TODO: Make this dynamic based on actual environment?
+            "env": "dev",
             "auth_billing_enabled": settings.auth_billing_enabled,
-            # Pass Cognito settings from the Settings object
             "cognito_user_pool_id": settings.cognito_user_pool_id or "",
             "cognito_app_client_id": settings.cognito_app_client_id or "",
             "cognito_domain": settings.cognito_domain or "",
@@ -222,42 +219,36 @@ async def extract_text_from_resume(file: UploadFile) -> str:
     file_content = await file.read()
     extracted_text = ""
 
-    try:
-        if content_type == "application/pdf":
-            # Extract text from PDF using PyMuPDF (fitz)
-            with fitz.open(stream=file_content, filetype="pdf") as doc:
-                for page in doc:
-                    extracted_text += page.get_text() + "\n"
+    if content_type == "application/pdf":
+        # Extract text from PDF using PyMuPDF (fitz)
+        with fitz.open(stream=file_content, filetype="pdf") as doc:
+            for page in doc:
+                extracted_text += page.get_text() + "\n"
 
-        elif content_type in [
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/msword",
-        ]:
-            # Extract text from DOCX
-            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                temp_file.write(file_content)
-                temp_file_path = temp_file.name
+    elif content_type in [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+    ]:
+        # Extract text from DOCX
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_file.write(file_content)
+            temp_file_path = temp_file.name
 
-            try:
-                doc = Document(temp_file_path)
-                extracted_text = "\n".join([para.text for para in doc.paragraphs])
-            finally:
-                # Clean up the temporary file
-                if os.path.exists(temp_file_path):
-                    os.unlink(temp_file_path)
+        try:
+            doc = Document(temp_file_path)
+            extracted_text = "\n".join([para.text for para in doc.paragraphs])
+        finally:
+            # Clean up the temporary file
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
 
-        elif content_type == "text/plain":
-            # Already a text file
-            extracted_text = file_content.decode("utf-8")
+    elif content_type == "text/plain":
+        # Already a text file
+        extracted_text = file_content.decode("utf-8")
 
-        else:
-            raise HTTPException(
-                status_code=400, detail=f"Unsupported file type: {content_type}"
-            )
-
-    except Exception as e:
+    else:
         raise HTTPException(
-            status_code=500, detail=f"Error extracting text from resume: {str(e)}"
+            status_code=400, detail=f"Unsupported file type: {content_type}"
         )
 
     return extracted_text
@@ -276,11 +267,6 @@ def create_or_update_profile_endpoint(
         user = crud.create_user(db=db, user=schemas.UserCreate(email=current_user.email, cognito_sub=current_user.email))
     crud.create_or_update_user_profile(db=db, user_id=user_id, profile=profile)
     profile_json_str = crud.get_user_profile(db=db, user_id=user_id)
-    if profile_json_str is None:
-        return Response(
-            status_code=204,
-            headers={"X-Profile-Status": "no_profile_found"},
-        )
     profile_data = json.loads(profile_json_str)
     return schemas.UserProfile(
         id=user_id, owner_email=user.email, profile_data=profile_data
@@ -329,10 +315,9 @@ def get_profile_endpoint(
         return Response(
             status_code=204, headers={"X-Profile-Status": "no_profile_found"}
         )
+
     profile_data = json.loads(profile_json_str)
-    profile = schemas.UserProfile(
-        id=user_id, owner_email=user.email, profile_data=profile_data
-    )
+    profile = schemas.UserProfile(id=user_id, owner_email=user.email, profile_data=profile_data)
     return JSONResponse(content=profile.model_dump())
 
 
@@ -354,17 +339,13 @@ def get_job_endpoint(
 ):
     user_id = current_user.id
     job = crud.get_job(db=db, job_id=job_id, user_id=user_id)
-    if not job:
-        raise HTTPException(
-            status_code=404, detail=f"Job with id {job_id} not found for user {user_id}"
-        )
     return JSONResponse(
         content={
             "id": job.id,
             "title": job.title,
             "company": job.company,
             "description": job.description,
-            "user_id": job.user_id,
+            "owner_id": job.owner_id,
             "ranking_score": getattr(job, "ranking_score", None),
             "ranking_explanation": getattr(job, "ranking_explanation", None),
             "tailoring_suggestions": getattr(job, "tailoring_suggestions", None),
@@ -380,44 +361,28 @@ async def delete_job_endpoint(
 ):
     user_id = current_user.id
     logger.info(f"Attempting to delete job {job_id} for user {user_id}")
-    success = crud.delete_job(db=db, job_id=job_id, user_id=user_id)
-    if not success:
-        logger.warning(f"Job {job_id} not found or not owned by user {user_id} for deletion.")
-        raise HTTPException(
-            status_code=404,
-            detail=f"Job with id {job_id} not found for user {user_id}",
-        )
-    # db.commit() # Commit is now handled in crud.delete_job
-    
-    # Send SSE notification
-    await manager.send_personal_message(
-        {"job_id": job_id, "message": "Job deleted successfully"},
-        user_id,
-        event="job_deleted"
-    )
-    logger.info(f"Successfully deleted job {job_id} for user {user_id} and sent SSE.")
+    crud.delete_job(db=db, job_id=job_id, user_id=user_id)
     return {"status": "deleted", "job_id": job_id}
 
-
-# --- Endpoint to save job from Chrome Extension --- #
-from aws_embedded_metrics import metric_scope
 
 @metric_scope
 async def process_job_in_background(
     user_id: int,
     markdown_content: str,
-    manager: ConnectionManager,
+    manager_override: Union[ConnectionManager, None] = None,
     db_session_override: Union[Session, None] = None,
     metrics=None,
 ):
+    """Background task to process a job description. Can use an override session for testing."""
     metrics.set_namespace("GreatFitJobs")
     metrics.put_metric("jobs_submitted", 1, "Count")
     metrics.set_property("user_id", user_id)
     job_id = None
-    """Background task to process a job description. Can use an override session for testing."""
     db_session: Optional[Session] = None
     job_id: Optional[int] = None # To store the job ID once created
     session_created_internally = False # Flag to track if we need to close the session
+
+    _manager = manager_override or manager
 
     try:
         if db_session_override:
@@ -430,29 +395,20 @@ async def process_job_in_background(
 
         # --- Get User and Check Credits --- #
         user = crud.get_user_by_id(db=db_session, user_id=user_id)
-        if not user:
-            raise Exception(f"User {user_id} not found.") # Should not happen if called via authenticated route
 
-        from settings import get_settings
         if get_settings().auth_billing_enabled and user.credits <= 0:
             logger.warning(f"User {user_id} has insufficient credits ({user.credits}) to save job.")
-            await manager.send_personal_message(
+            await _manager.send_personal_message(
                 {"error": "Insufficient Credits", "message": "You need more credits to save a new job.", "credits_needed": 1},
                 user_id,
                 event="job_error",
             )
-            # Important: return early before processing the job
             return
 
-        # --- 1. Clean Markdown --- #
-        logger.info(f"BG Task: Cleaning markdown for user {user_id}")
-        cleaned_data: schemas.CleanedJobDescription = await logic.clean_job_description(
-            markdown_content
-        )
-        logger.info(f"BG Task: Markdown cleaned for user {user_id}")
+        # --- 1. Clean up the job description --- #
+        cleaned_data: schemas.CleanedJobDescription = await logic.clean_job_description(markdown_content)
 
         # --- 2. Create initial job record (no score yet) --- #
-        logger.info("BG: creating job row")
         db_job = crud.create_job(
             db=db_session,
             user_id=user_id,
@@ -466,7 +422,6 @@ async def process_job_in_background(
         db_session.refresh(db_job)
         job_id = db_job.id
         metrics.set_property("job_id", job_id)
-        logger.info("BG: created job row", job_id=job_id)
 
         # --- 2a. Send initial 'job_created' SSE immediately so UI can render pending card --- #
         initial_job_data = {
@@ -474,10 +429,9 @@ async def process_job_in_background(
             "title": db_job.title,
             "company": db_job.company,
             "description": db_job.description,
-            "user_id": user_id,
+            "owner_id": user_id,
         }
-        await manager.send_personal_message(initial_job_data, user_id, event="job_created")
-        logger.info(f"BG Task: Sent initial 'job_created' SSE for job {job_id}")
+        await _manager.send_personal_message(initial_job_data, user_id, event="job_created")
 
         # --- 3. Rank job now that ID exists --- #
         logger.info("BG: ranking job")
@@ -491,15 +445,14 @@ async def process_job_in_background(
             logger.info(f"BG: updated job {job_id} with ranking score {score}")
 
             # --- Send 'job_ranked' SSE so UI can update score/explanation incrementally --- #
-            await manager.send_personal_message(
+            await _manager.send_personal_message(
                 {"job_id": job_id, "score": score, "explanation": explanation},
                 user_id,
                 event="job_ranked",
             )
-            logger.info(f"BG Task: Sent 'job_ranked' SSE for job {job_id}")
         else:
             logger.warning("BG: ranking failed", job_id=job_id)
-            await manager.send_personal_message(
+            await _manager.send_personal_message(
                 {
                     "job_id": job_id,
                     "error": "ranking_failed",
@@ -509,70 +462,65 @@ async def process_job_in_background(
                 event="job_error",
             )
 
-        # --- 5. Generate Tailoring Suggestions --- #
+        # --- Deduct Credit (NEW PLACEMENT) ---
+        if get_settings().auth_billing_enabled: # Check if billing is enabled
+            logger.info(f"BG Task: Deducting credit for user {user_id} for job {job_id}")
+            # It's crucial to get a fresh User instance from the current db_session
+            # if the original 'user' object was fetched outside this session or much earlier.
+            # However, if 'user' was fetched at the start of this function using 'db_session',
+            # and 'db_session' is the same session used throughout, it might be okay.
+            # For safety, fetching it again or ensuring it's attached to the current session is best.
+            user_to_update = db_session.get(models.User, user_id)
+            if user_to_update:
+                user_to_update.credits -= 1
+                # The commit for credit deduction can happen here or be bundled with tailoring suggestions commit.
+                # For simplicity, let's bundle it with the tailoring suggestions commit later.
+                logger.info(f"BG Task: Credit deduction recorded for user {user_id}. Will commit with tailoring results.")
+            else:
+                logger.error(f"BG Task: User {user_id} not found for credit deduction. Job: {job_id}")
+                # Decide if this is a critical error. If user is gone, maybe stop?
+                # For now, log and continue to tailoring, but credit won't be deducted.
+        
+        # --- Generate Tailoring Suggestions ---
         logger.info(f"BG Task: Generating tailoring suggestions for job {job_id}")
-        suggestions = await logic.generate_tailoring_suggestions(
-            job=db_job, db=db_session
-        )
-        if suggestions:
-            logger.info(f"BG Task: Tailoring suggestions generated for job {job_id}")
-            # Update the job object in the current session
-            db_job.tailoring_suggestions = suggestions
-
-            # --- 6. Deduct Credit & Commit Final Updates & Send 'job_tailored' SSE --- #
-            logger.info(f"BG Task: Deducting credit for user {user_id}")
-            # Re-fetch user right before modification to ensure we have the session-managed instance
-            user_to_update = db_session.get(models.User, user_id)
-            if not user_to_update:
-                # This should ideally not happen if the initial fetch succeeded
-                raise Exception(f"User {user_id} disappeared during processing.")
-
-            user_to_update.credits -= 1 # Deduct credit here
-            # db_session.add(user_to_update) # No need to add if fetched via session.get
-            db_session.commit() # Commit all changes (job updates + credit deduction)
-            metrics.put_metric("jobs_completed", 1, "Count")
-            logger.info(f"BG Task: Final updates committed for job {job_id} (including credit deduction)")
-
-            # Send SSE after successful commit
-            await manager.send_personal_message(
-                {
-                    "job_id": job_id,
-                    "status": "tailored",
-                    "suggestions": suggestions,
-                },
-                user_id,
-                event="job_tailored",
+        try:
+            suggestions = await logic.generate_tailoring_suggestions(job=db_job, db=db_session)
+            if suggestions:
+                db_job.tailoring_suggestions = suggestions
+                await _manager.send_personal_message(
+                    {"job_id": job_id, "status": "tailored", "suggestions": suggestions},
+                    user_id, event="job_tailored"
+                )
+            else:
+                logger.warning(f"BG Task: Tailoring suggestions failed or returned empty for job {job_id}")
+                await _manager.send_personal_message(
+                    {"job_id": job_id, "error": "tailoring_failed", "message": "Failed to generate tailoring suggestions (returned empty)."},
+                    user_id, event="job_error"
+                )
+        except Exception as e_tailor:
+            logger.error(f"BG Task: Exception during tailoring suggestions for job {job_id}: {e_tailor}", exc_info=True)
+            await _manager.send_personal_message(
+                {"job_id": job_id, "error": "tailoring_exception", "message": f"An error occurred during tailoring: {str(e_tailor)}"},
+                user_id, event="job_error"
             )
-            logger.info(f"BG Task: Sent 'job_tailored' SSE for job {job_id}")
-        else:
-            # If tailoring fails, still need to commit the job creation and credit deduction
-            logger.warning("BG Task: Tailoring suggestions failed", job_id=job_id)
-            await manager.send_personal_message(
-                {
-                    "job_id": job_id,
-                    "error": "tailoring_failed",
-                    "message": "Failed to generate tailoring suggestions",
-                },
-                user_id,
-                event="job_error",
-            )
-            # Re-fetch user right before modification here as well
-            user_to_update = db_session.get(models.User, user_id)
-            if not user_to_update:
-                raise Exception(f"User {user_id} disappeared during processing.")
 
-            user_to_update.credits -= 1 # Deduct credit here as well
-            # db_session.add(user_to_update) # No need to add if fetched via session.get
+        # --- Commit final changes (tailoring suggestions AND credit deduction) ---
+        try:
             db_session.commit()
-
+            metrics.put_metric("jobs_completed", 1, "Count") # This seems like a good place for successful completion metric
+            logger.info(f"BG Task: Final updates (tailoring, credits) committed for job {job_id}")
+        except Exception as e_commit_final:
+            logger.error(f"BG Task: Failed to commit final updates for job {job_id}: {e_commit_final}", exc_info=True)
+            db_session.rollback()
+            # Potentially send another error SSE if this commit fails
+        
     except openai.ContentFilterFinishReasonError as cf_error:
         metrics.put_metric("jobs_failed", 1, "Count")
-        print("EXCEPTION cf_error IN BG TASK:\n", "".join(traceback.format_exception(e)), file=sys.stderr)
         logger.error(
             f"BG Task: Content filter error processing job for user {user_id}: {cf_error}",
             exc_info=True,
         )
-        await manager.send_personal_message(
+        await _manager.send_personal_message(
             {
                 "error": "Content filter triggered",
                 "message": "The job description could not be processed due to content filtering.",
@@ -580,56 +528,18 @@ async def process_job_in_background(
             user_id,
             event="job_error",
         )
-    except Exception as e:
-        print("EXCEPTION IN BG TASK:\n", "".join(traceback.format_exception(e)), file=sys.stderr)
-        error_type = type(e).__name__
-        logger.error(
-            f"BG Task: Error processing job for user {user_id} (Job ID: {job_id}): {error_type} - {e}",
-            exc_info=True,
-        )
-        # Send specific error message to user if job ID exists
-        if job_id:
-            error_message = f"Failed to fully process job {job_id}. Error: {error_type}"
-            event_data = {
-                "job_id": job_id,
-                "error": error_type,
-                "message": error_message,
-            }
-        else:
-            error_message = f"Failed to process job submission. Error: {error_type}"
-            event_data = {"error": error_type, "message": error_message}
-
-        await manager.send_personal_message(event_data, user_id, event="job_error")
-        # Rollback if a session exists and an error occurred after initial commit
-        if db_session:
-            try:
-                db_session.rollback()
-                logger.info(
-                    f"BG Task: Rolled back changes for job {job_id} due to error (credits NOT restored)."
-                )
-                # Note: Credits are *not* restored automatically on rollback here.
-                # A more robust system might handle credit restoration explicitly.
-            except Exception as rb_err:
-                print("EXCEPTION rb_err IN BG TASK:\n", "".join(traceback.format_exception(e)), file=sys.stderr)
-                logger.error(
-                    f"BG Task: Error during rollback for job {job_id}: {rb_err}",
-                    exc_info=True,
-                )
 
     finally:
         logger.info(f"Background job processing finished for user {user_id}.")
         # Decrement processing count now that background task is finished
-        try:
-            await manager.decrement_processing_count(user_id)
-        except Exception as pc_err:
-            logger.error("Failed to decrement processing count", user_id=user_id, exc_info=True)
+        await _manager.decrement_processing_count(user_id)
         if session_created_internally and db_session:
             db_session.close()
             logger.info("BG Task: Closed internally created DB session.")
 
 @app.post("/jobs/markdown", status_code=status.HTTP_202_ACCEPTED)
 async def create_job_from_markdown(
-    markdown_request: schemas.JobMarkdownRequest,  # expects {"markdown_content": "..."}
+    job_input: schemas.JobContentInput,  # expects {"content": "..."}
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -637,7 +547,7 @@ async def create_job_from_markdown(
     logger = structlog.get_logger(__name__)
     user_id = current_user.id
 
-    markdown_content = markdown_request.markdown_content.strip()
+    markdown_content = job_input.content.strip()
     if not markdown_content:
         logger.warning("Empty markdown_content received", user_id=user_id)
         raise HTTPException(status_code=422, detail="markdown_content cannot be empty")
@@ -646,14 +556,13 @@ async def create_job_from_markdown(
 
     # Increment processing counter + launch background task
     await manager.increment_processing_count(user_id)
-    await process_job_in_background(user_id, markdown_content, manager)
+    await process_job_in_background(user_id, markdown_content)
 
     logger.info("Job accepted for processing", user_id=user_id)
     return {"status": "accepted"}
 
 
 # --- Job Ranking and Tailoring Endpoints ---
-
 
 class JobRankResponse(BaseModel):
     score: Optional[float] = None
@@ -674,72 +583,34 @@ async def rank_job_endpoint(
     score, explanation = await logic.rank_job_with_llm(
         db=db, job_id=job_id, user_id=user_id
     )
-    if score is None or explanation is None:
-        raise HTTPException(status_code=500, detail="Failed to rank job using LLM")
     db.commit()
     return {"score": score, "explanation": explanation}
 
 
-@app.post(
-    "/jobs/tailor-suggestions", response_model=schemas.TailoringResponse
-)
 @app.post("/jobs/from_extension")
 @app.post("/jobs/from_extension", response_model=schemas.Job)
 async def create_job_from_extension(
-    raw_job_input: schemas.RawJobInput = Body(...),
+    job_input: schemas.JobContentInput = Body(...),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Create a new job from the extension using raw job description and LLM parsing.
     """
-    try:
-        # Parse the raw job description using LLM
-        parsed = await logic.parse_job_description_with_llm(raw_job_input.raw_description)
-        # Validate parsed result
-        if not parsed or not all(parsed.get(k) for k in ("title", "company", "description")):
-            raise HTTPException(
-                status_code=422,
-                detail="Failed to extract required fields (title, company, description) from job description."
-            )
-        job_create = schemas.JobCreate(
-            title=parsed["title"],
-            company=parsed["company"],
-            description=parsed["description"],
-        )
-        job = crud.create_job(db, job=job_create, user_id=current_user.id)
-        await manager.send_personal_message(
-            schemas.Job.model_validate(job).model_dump(),
-            current_user.id,
-            event="job_created",
-        )
-        return job
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create job: {str(e)}")
-async def get_tailoring_suggestions_endpoint(
-    request_data: schemas.TailoringRequest,
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    user_id = current_user.id
-    db_profile = crud.get_user_profile(db, user_id=user_id)
-    if db_profile is None:
-        raise HTTPException(
-            status_code=404, detail=f"User profile not found for user_id {user_id}"
-        )
-    try:
-        suggestions: schemas.TailoringResponse = await logic.get_tailoring_suggestions(
-            profile_text=db_profile, job_description=request_data.job_description
-        )
-        return suggestions
-    except Exception as e:
-        print(f"Error generating tailoring suggestions: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to generate tailoring suggestions."
-        )
-
+    # Parse the raw job description using LLM
+    cleaned_job_data = await logic.parse_job_description_with_llm(job_input.content)
+    job_create = schemas.JobCreate(
+        title=cleaned_job_data.title,
+        company=cleaned_job_data.company,
+        description=cleaned_job_data.cleaned_markdown,
+    )
+    job = crud.create_job(db, job=job_create, user_id=current_user.id)
+    await manager.send_personal_message(
+        schemas.Job.model_validate(job).model_dump(),
+        current_user.id,
+        event="job_created",
+    )
+    return job
 
 # --- Stripe Checkout Session endpoint
 @app.post("/billing/checkout-session", tags=["Billing"])
@@ -756,36 +627,25 @@ async def create_checkout_session(
 
     stripe.api_key = settings.stripe_secret_key
 
-    # Define the success and cancel URLs
-    # Use request.url_for to build absolute URLs
     success_url = request.url_for('billing_success_page')
     cancel_url = request.url_for('billing_cancel_page')
 
-    try:
-        logger.info(f"Attempting to create Stripe checkout session for user {current_user.id}")
-        loop = asyncio.get_running_loop()
-        session = await loop.run_in_executor(
-            None,
-            lambda: stripe.checkout.Session.create(
-                payment_method_types=["card"],
-                line_items=[{"price": settings.stripe_price_id_50_credits, "quantity": 1}],
-                mode="payment",
-                success_url=f"{success_url}?session_id={{CHECKOUT_SESSION_ID}}",
-                cancel_url=str(cancel_url),
-                metadata={"user_id": str(current_user.id)},
-                locale='en',
-            ),
-        )
-        logger.info(f"Stripe checkout session created successfully (ID: {session.id}) for user {current_user.id}")
-        return {"url": session.url}
-    except Exception as e:
-        # Use logger.exception to include traceback
-        logger.exception(f"Stripe Checkout session creation failed unexpectedly for user {current_user.id}: {e}")
-        # Return 500 Internal Server Error for construction issues
-        return JSONResponse(
-            content={"status": "error", "detail": "Could not create Stripe checkout session"},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+    logger.info(f"Attempting to create Stripe checkout session for user {current_user.id}")
+    loop = asyncio.get_running_loop()
+    session = await loop.run_in_executor(
+        None,
+        lambda: stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{"price": settings.stripe_price_id_50_credits, "quantity": 1}],
+            mode="payment",
+            success_url=f"{success_url}?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=str(cancel_url),
+            metadata={"user_id": str(current_user.id)},
+            locale='en',
+        ),
+    )
+    logger.info(f"Stripe checkout session created successfully (ID: {session.id}) for user {current_user.id}")
+    return {"url": session.url}
 
 
 # --- Billing Success/Cancel Page Routes --- #
@@ -824,137 +684,53 @@ async def stripe_webhook(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings), # Inject Settings
 ):
-    # --- Dependency/Header Checks --- #
-    if not settings.stripe_webhook_secret: # Check settings first
-        logger.error("Stripe webhook secret not configured in settings.")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stripe webhook secret not configured")
-    if not stripe_signature:
-        logger.warning("Missing Stripe-Signature header.")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Stripe-Signature header")
+    payload = await request.body()
+    event = stripe.Webhook.construct_event(payload, stripe_signature, settings.stripe_webhook_secret)
+    event_id = event.get("id")
+    event_type = event.get("type")
+    logger.info(f"Stripe webhook event received: ID={event_id}, Type={event_type}")
 
-    # --- Main Processing Block --- #
-    try:
-        payload = await request.body()
-        logger.debug("Webhook payload received.")
+    # --- Event Handling --- #
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        user_id = int(session.get('metadata', {}).get('user_id'))
 
-        # --- Event Construction --- #
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, stripe_signature, settings.stripe_webhook_secret
-            )
-            # Extract event id and type safely for logging (supports dict or StripeObject)
-            if isinstance(event, dict):
-                event_id = event.get("id")
-                event_type = event.get("type")
-            else:
-                event_id = getattr(event, "id", None)
-                event_type = getattr(event, "type", None)
+        # Process valid user_id
+        logger.info(f"Processing checkout.session.completed for user_id: {user_id}")
+        user = crud.get_user_by_id(db=db, user_id=user_id)
+        if user:
+            user.credits += 50
+            db.add(user)
+            db.commit()
+            db.refresh(user) # Refresh to get updated state
+            logger.info(f"Successfully added 50 credits to user {user_id}. New balance: {user.credits}")
+        else:
+            logger.warning(f"User {user_id} not found in DB; skipping credit grant but returning success.")
+            return JSONResponse(content={"status": "success"}, status_code=200)
+    else:
+        # Unhandled event type (return 200 OK to Stripe)
+        logger.info(f"Stripe Webhook: Received unhandled event type {event_type}")
 
-            logger.info(f"Stripe webhook event received: ID={event_id}, Type={event_type}")
-        except ValueError as e:
-            # Invalid payload
-            logger.warning(f"Stripe Webhook Error: Invalid payload - {e}", exc_info=True) # Log as warning, include traceback
-            # Return 400 Bad Request for invalid payload
-            return JSONResponse(content={"status": "error", "detail": "Invalid payload"}, status_code=status.HTTP_400_BAD_REQUEST)
-        except stripe.error.SignatureVerificationError as e:
-            # Invalid signature
-            logger.warning(f"Stripe Webhook Error: Invalid signature - {e}", exc_info=True) # Log as warning, include traceback
-            # Return 400 Bad Request for invalid signature
-            return JSONResponse(content={"status": "error", "detail": "Invalid signature"}, status_code=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            # Catch any other unexpected error during event construction
-            logger.exception(f"Stripe Webhook Error: Unexpected error constructing event - {e}")
-            # Return 500 Internal Server Error for construction issues
-            return JSONResponse(content={"status": "error", "detail": "Error processing webhook event construction"}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        # --- Event Handling --- #
-        logger.info(f"Attempting to handle event ID {event_id}, Type {event_type}")
-        try:
-            logger.info(f"Inside event handling try block for event ID {event_id}")
-            if event['type'] == 'checkout.session.completed':
-                session = event['data']['object']
-                user_id_str = session.get('metadata', {}).get('user_id')
-
-                # Handle missing or invalid user_id (return 200 OK to Stripe)
-                if not user_id_str:
-                    logger.error("Stripe Webhook Error: Missing user_id in checkout.session.completed metadata")
-                    return JSONResponse(content={"status": "error", "detail": "Missing user_id"}, status_code=200)
-                try:
-                    user_id = int(user_id_str)
-                except ValueError:
-                    logger.error(f"Stripe Webhook Error: Invalid user_id format '{user_id_str}' in session metadata")
-                    return JSONResponse(content={"status": "error", "detail": "Invalid user_id format"}, status_code=200)
-
-                # Process valid user_id
-                logger.info(f"Processing checkout.session.completed for user_id: {user_id}")
-                try:
-                    user = crud.get_user_by_id(db=db, user_id=user_id)
-                    if user:
-                        user.credits += 50 # TODO: Make this amount configurable?
-                        db.add(user)
-                        db.commit()
-                        db.refresh(user) # Refresh to get updated state
-                        logger.info(f"Successfully added 50 credits to user {user_id}. New balance: {user.credits}")
-                    else:
-                        # User not found in our database. Per Stripe best practice, acknowledge webhook with 200 OK.
-                        # We return status "success" (no-op) so that Stripe will not retry, even though no credits were added.
-                        logger.warning(
-                            f"Stripe Webhook Notice: User {user_id} not found in DB; skipping credit grant but returning success."
-                        )
-                        return JSONResponse(content={"status": "success"}, status_code=200)
-                except Exception as db_err:
-                    # Database or other critical error during update (return 500 Internal Server Error)
-                    logger.exception(f"Stripe Webhook Error: Database error updating credits for user {user_id}: {db_err}")
-                    db.rollback()
-                    return JSONResponse(content={"status": "error", "detail": "Database error processing webhook"}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            else:
-                # Unhandled event type (return 200 OK to Stripe)
-                logger.info(f"Stripe Webhook: Received unhandled event type {event_type}")
-                # No error, just noting it was unhandled.
-
-        except Exception as e:
-            # Catchall for unexpected errors during event *handling*
-            logger.exception(f"Stripe Webhook Error: Unexpected error handling event ID {event_id}, Type {event_type}: {e}")
-            # Return 500 Internal Server Error for unexpected handling errors
-            return JSONResponse(content={"status": "error", "detail": "Internal server error handling webhook event"}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        # If we reach here, event was handled or ignored gracefully.
-        logger.info(f"Webhook processing finished successfully for event ID {event_id}")
-        return JSONResponse(content={"status": "success"}, status_code=200)
-
-    except Exception as e:
-        # Catch any unexpected error in the *entire* function body (after dep checks)
-        logger.exception(f"Unhandled exception in stripe_webhook endpoint: {e}")
-        # Ensure a 500 response is sent
-        return JSONResponse(
-            content={"status": "error", "detail": "An unexpected internal server error occurred."},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+    # If we reach here, event was handled or ignored gracefully.
+    logger.info(f"Webhook processing finished successfully for event ID {event_id}")
+    return JSONResponse(content={"status": "success"}, status_code=200)
 
 
 # --- SSE Endpoint --- #
-from auth import verify_token  # already present
-from database import SessionLocal
 
 @app.get("/stream-jobs")
 async def stream_jobs(request: Request, token: Union[str, None] = None, user_id: Union[int, None] = None):
     """Endpoint for Server-Sent Events to stream new job updates."""
-    logger = structlog.get_logger("uvicorn.error")
     settings = get_settings()
     if token:
-        try:
-            payload = verify_token(token)
-            with SessionLocal() as db:
-                import crud  # avoid circular import at top
-                user = crud.get_user_by_email(db, payload.email or payload.sub)
-                if not user:
-                    logger.warning("SSE 401: Unknown user in token", extra={"token": token})
-                    raise HTTPException(401, "Unknown user in token")
-                user_id = user.id
-                logger.info("SSE auth ok", extra={"user_id": user_id})
-        except Exception as e:
-            logger.warning(f"SSE 401: Token verification failed: {e}", extra={"token": token})
-            raise HTTPException(401, "Invalid or expired token")
+        payload = verify_token(token)
+        with SessionLocal() as db:
+            user = crud.get_user_by_email(db, payload.email or payload.sub)
+            if not user:
+                logger.warning("SSE 401: Unknown user in token", extra={"token": token})
+                raise HTTPException(401, "Unknown user in token")
+            user_id = user.id
+            logger.info("SSE auth ok", extra={"user_id": user_id})
     else:
         if settings.auth_billing_enabled:
             # In auth-enabled mode, token is mandatory

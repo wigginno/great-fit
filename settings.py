@@ -5,13 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        # `.env.prod` takes priority over `.env`
-        env_file=(".env", ".env.prod")
-    )
+    model_config = SettingsConfigDict(env_file=(".env", ".env.prod"))
 
     openrouter_api_key: Optional[str] = None
-    openai_api_key: Optional[str] = None
 
     # Cognito Settings (Optional for local dev)
     cognito_user_pool_id: Optional[str] = None
@@ -23,8 +19,6 @@ class Settings(BaseSettings):
     stripe_secret_key: Optional[str] = None
     stripe_webhook_secret: Optional[str] = None
     stripe_price_id_50_credits: Optional[str] = None
-
-    # Add other settings variables here as needed
 
     # Toggle for authentication and billing (default: enabled)
     auth_billing_enabled: bool = True
