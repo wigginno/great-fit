@@ -87,11 +87,7 @@ function resetProfile() {
   if (savedJobsSection) savedJobsSection.classList.add("hidden");
 
   // Hide modal if open
-  const profileModal = document.getElementById("profileModal");
-  if (profileModal) {
-    profileModal.classList.add("hidden");
-    profileModal.classList.remove("flex");
-  }
+  window.dispatchEvent(new CustomEvent('close-profile-modal'));
 
   // Show upload section and hide profile actions
   const resumeUploadSection = document.getElementById("resumeUploadSection");
