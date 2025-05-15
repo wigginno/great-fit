@@ -1,7 +1,5 @@
 # Great Fit
-LLM-powered job application assistant.
-
-With Great Fit, you can see how well your resume stacks up for jobs you want to apply to, and get helpful suggestions to tailor your resume for specific roles.
+LLM-powered app that scores how well your resume stacks up for jobs you want to apply to, and provides concrete suggestions to tailor your resume for specific roles.
 
 A running instance is at **https://greatfit.app**.
 
