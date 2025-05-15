@@ -1,5 +1,9 @@
 # Great Fit
-LLM-powered job application assistant that scores how well you match a job and tells you how to improve.
+LLM-powered job application assistant.
+
+With Great Fit, you can see how well your resume stacks up for jobs you want to apply to, and get helpful suggestions to tailor your resume for specific roles.
+
+A running instance is at **https://greatfit.app**.
 
 ---
 
@@ -95,7 +99,7 @@ Runs against an ephemeral SQLite DB defined in `conftest.py`.
 
 * Build minified CSS: `npm run build`.
 * Image runs as `uvicorn main:app` on **port 8080**.
-* CDK stack (`infra/`) provisions VPC, Aurora Serverless v2, secrets, App Runner and ties in Cognito + Stripe keys.
+* CDK stack (`infra/`) provisions VPC, Aurora Serverless v2, secrets, App Runner and ties in Cognito + Stripe keys. Nothing here is required for self-hosting.
 
 ---
 
