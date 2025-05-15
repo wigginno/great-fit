@@ -15,7 +15,7 @@ Running instance (requires sign up): **https://greatfit.app**
 
 ## Demo
 
-https://github.com/user-attachments/assets/e503475b-6303-4ab0-b3ed-64473afce8a0
+https://github.com/user-attachments/assets/75aa8550-b5de-4ac8-8af2-e8dd975b8801
 
 ## Quick Start (local)
 
