@@ -1,7 +1,7 @@
 # Great Fit
 LLM-powered app that scores how well your resume stacks up for jobs you want to apply to, and provides concrete suggestions to tailor your resume for specific roles.
 
-A running instance is at **https://greatfit.app**.
+Running instance (requires sign up): **https://greatfit.app**
 
 ---
 
