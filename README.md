@@ -43,6 +43,13 @@ uvicorn main:app --reload --port 8000
 
 Browse to [http://localhost:8000](http://localhost:8000).
 
+### Chrome Extension
+
+Load the `chrome-extension` directory as an unpacked extension in Chrome.
+When you click the "Save Job to Great Fit" action on a job listing page,
+the page HTML is converted to Markdown and sent to
+`http://localhost:8000/jobs/markdown`.
+
 ---
 
 ## Docker
